@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Fast partial tracking of audio through linear programming (Python port of the DAFx-18 MATLAB code)"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "numpy>=2.2.6",
     "scipy>=1.15.3",

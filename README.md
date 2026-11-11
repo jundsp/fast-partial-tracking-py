@@ -18,3 +18,7 @@ pip install fast-partial-tracking
 uv sync
 uv run pytest
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

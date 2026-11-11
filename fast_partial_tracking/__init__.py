@@ -1,0 +1,38 @@
+"""Fast partial tracking of audio through linear programming.
+
+Python implementation of J. Neri and P. Depalle, "Fast Partial Tracking of Audio with
+Real-Time Capability through Linear Programming", Proc. DAFx-18, Aveiro, Portugal,
+2018, pp. 326-333.
+
+Example:
+    >>> import fast_partial_tracking as fpt
+    >>> partials = fpt.track(x, fs, fpt.AnalysisConfig(window_length=2047, oversample=2))
+    >>> y = fpt.synthesize(partials)
+    >>> fpt.rsnr(x, y)
+    >>> partials.save("partials.parquet")
+"""
+
+from __future__ import annotations
+
+from fast_partial_tracking import io
+from fast_partial_tracking.config import AnalysisConfig, TrackingConfig
+from fast_partial_tracking.framing import FrameGrid
+from fast_partial_tracking.metrics import rsnr
+from fast_partial_tracking.partials import Frame, Partials
+from fast_partial_tracking.synthesis import Synthesizer, synthesize, synthesize_frames
+from fast_partial_tracking.tracker import PartialTracker, track
+
+__all__ = [
+    "AnalysisConfig",
+    "Frame",
+    "FrameGrid",
+    "PartialTracker",
+    "Partials",
+    "Synthesizer",
+    "TrackingConfig",
+    "io",
+    "rsnr",
+    "synthesize",
+    "synthesize_frames",
+    "track",
+]

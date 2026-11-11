@@ -1,0 +1,282 @@
+"""Frame-by-frame partial tracking (Section 3 of the paper).
+
+Each analysis frame goes through:
+
+1. Short-term parameter estimation with the DDM (Section 3.2, ``ddm.py``).
+2. Costs of linking every peak of frame k-1 to every peak of frame k (Sections 3.3-3.4,
+   ``cost.py``), solved as a linear assignment problem (Section 3.5, ``assignment.py``).
+3. Labeling of useful assignments as continuations or births (Section 3.6,
+   ``labeling.py``).
+
+Assignment and labeling only need frames k-1 and k, which is what makes the method
+real-time capable (Section 3.7). ``PartialTracker`` exposes that: it accepts audio in
+blocks of any size and returns frames as soon as they are final.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Iterable
+from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+from fast_partial_tracking.assignment import useful_assignments
+from fast_partial_tracking.config import AnalysisConfig, TrackingConfig
+from fast_partial_tracking.cost import assignment_costs, cost_variances, midpoint_parameters
+from fast_partial_tracking.ddm import DdmEstimator, FrameEstimate
+from fast_partial_tracking.framing import FrameGrid
+from fast_partial_tracking.labeling import label_assignments
+from fast_partial_tracking.model import frame_parameters
+from fast_partial_tracking.partials import Frame, Partials
+
+if TYPE_CHECKING:
+    from fast_partial_tracking.io.base import PartialsWriter
+
+log = logging.getLogger(__name__)
+
+
+class PartialTracker:
+    """Streaming partial tracker.
+
+    Frame k-1 is only final after frame k has been analyzed, because a partial born in
+    frame k-1 is discovered when it is first linked to frame k. ``push`` therefore returns
+    the frames that just became final. Memory use is bounded by one frame of audio plus
+    two frames of estimates, regardless of the input length.
+
+    Example:
+        >>> tracker = PartialTracker(fs=44100)
+        >>> frames = [f for block in blocks for f in tracker.push(block)]
+        >>> frames += tracker.flush()
+
+    Args:
+        fs: Sampling rate in Hz.
+        analysis: Short-term analysis settings.
+        tracking: Assignment cost settings.
+        threshold_db: Absolute peak-picking level in dB (20*log10 of the DFT magnitude).
+            If None, the threshold is ``analysis.peak_threshold_db`` below the level of a
+            full-scale (amplitude 1) sinusoid. ``track`` instead uses the loudest frame of
+            the signal as the reference, like the MATLAB code.
+        keep_alpha: Whether emitted frames carry the full model coefficients.
+    """
+
+    def __init__(
+        self,
+        fs: float,
+        analysis: AnalysisConfig | None = None,
+        tracking: TrackingConfig | None = None,
+        threshold_db: float | None = None,
+        keep_alpha: bool = True,
+    ) -> None:
+        self.analysis = analysis or AnalysisConfig()
+        self.tracking = tracking or TrackingConfig()
+        self.grid = FrameGrid.from_config(fs, self.analysis)
+        self.estimator = DdmEstimator(self.grid, self.analysis)
+        self.var_f, self.var_a = cost_variances(self.tracking)
+        if threshold_db is None:
+            full_scale = 20.0 * np.log10(np.sum(self.estimator.window) / 2.0)
+            threshold_db = full_scale - abs(self.analysis.peak_threshold_db)
+        self.threshold_db = float(threshold_db)
+        self.keep_alpha = keep_alpha
+        self.n_prev, self.n_curr = self.grid.midpoint_offsets[1], self.grid.midpoint_offsets[0]
+
+        self._buffer = np.zeros(self.grid.pad_front)
+        self._num_samples = 0
+        self._next_frame = 0
+        self._finished = False
+        self.num_tracks = 0
+        self._prev: FrameEstimate | None = None
+        # Rows of the frame waiting to be emitted (frame k-1 while processing frame k).
+        self._pending_alpha = np.zeros((0, self.estimator.order + 1), complex)
+        self._pending_tracks = np.zeros(0, np.int64)
+        # Peak index (within the previous estimate) and label of each active partial.
+        self._active_peaks = np.zeros(0, np.intp)
+        self._active_tracks = np.zeros(0, np.int64)
+
+    def push(self, samples: np.ndarray) -> list[Frame]:
+        """Feeds a block of audio and returns the frames that became final.
+
+        Args:
+            samples: Mono audio block of any length.
+
+        Returns:
+            Finalized frames in increasing order (possibly empty).
+        """
+        if self._finished:
+            raise RuntimeError("tracker already flushed; create a new tracker")
+        samples = np.asarray(samples, dtype=float).ravel()
+        self._num_samples += samples.size
+        self._buffer = np.concatenate([self._buffer, samples])
+        return self._process_available()
+
+    def flush(self) -> list[Frame]:
+        """Ends the stream: zero-pads the tail and returns the remaining frames.
+
+        After flushing, ``grid`` holds the signal length and frame count.
+
+        Returns:
+            The remaining frames, ending with the last frame M-1.
+        """
+        if self._finished:
+            return []
+        self.grid = self.grid.with_signal_length(self._num_samples)
+        self._buffer = np.concatenate([self._buffer, np.zeros(self.grid.pad_back)])
+        # The padded tail can hold more than M frames when n_dft > N; MATLAB stops at M.
+        frames = self._process_available(limit=self.grid.num_frames)
+        frames.append(self._emit_pending(self.grid.num_frames - 1))
+        self._finished = True
+        return frames
+
+    def _process_available(self, limit: int | None = None) -> list[Frame]:
+        frames: list[Frame] = []
+        n = self.grid.window_length
+        hop = self.grid.hop
+        start = 0
+        while start + n <= self._buffer.size and (limit is None or self._next_frame < limit):
+            emitted = self._process_frame(self._buffer[start : start + n])
+            if emitted is not None:
+                frames.append(emitted)
+            start += hop
+        self._buffer = self._buffer[start:].copy()
+        return frames
+
+    def _process_frame(self, samples: np.ndarray) -> Frame | None:
+        k = self._next_frame
+        self._next_frame += 1
+        estimate = self.estimator(samples, self.threshold_db)
+        prev = self._prev
+        self._prev = estimate
+        if prev is None:
+            return None
+
+        rows, cols = self._link(prev, estimate)
+        labels = label_assignments(self._active_peaks, self._active_tracks, rows, cols, self.num_tracks)
+        # Births are discovered now but start in frame k-1, so they are appended to it.
+        self._pending_alpha = np.concatenate([self._pending_alpha, prev.alpha[labels.birth_prev]])
+        self._pending_tracks = np.concatenate([self._pending_tracks, labels.birth_track])
+        self.num_tracks += labels.birth_track.size
+        finished = self._emit_pending(k - 1)
+
+        self._active_peaks = labels.curr_peaks
+        self._active_tracks = labels.curr_tracks
+        self._pending_alpha = estimate.alpha[self._active_peaks]
+        self._pending_tracks = self._active_tracks
+        return finished
+
+    def _link(self, prev: FrameEstimate, curr: FrameEstimate) -> tuple[np.ndarray, np.ndarray]:
+        """Useful assignments between two consecutive frames (eqs. 8-14)."""
+        if len(prev) == 0 or len(curr) == 0:
+            empty = np.zeros(0, dtype=np.intp)
+            return empty, empty
+        fs = self.grid.fs
+        log_amp_prev, freq_prev = midpoint_parameters(prev.alpha, self.n_prev, fs)
+        log_amp_curr, freq_curr = midpoint_parameters(curr.alpha, self.n_curr, fs)
+        cost, useful = assignment_costs(
+            log_amp_prev, freq_prev, log_amp_curr, freq_curr, self.var_f, self.var_a, self.tracking.delta
+        )
+        return useful_assignments(cost, useful)
+
+    def _emit_pending(self, index: int) -> Frame:
+        omega, log_amp, phase = frame_parameters(self._pending_alpha)
+        return Frame(
+            index=index,
+            center=int(self.grid.center(index)),
+            time_s=float(self.grid.time_seconds(index)),
+            omega=omega,
+            log_amp=log_amp,
+            phase=phase,
+            track_id=self._pending_tracks.astype(np.int64),
+            alpha=self._pending_alpha.copy() if self.keep_alpha else None,
+        )
+
+
+def reference_level_db(x: np.ndarray, grid: FrameGrid, window: np.ndarray) -> float:
+    """Spectral peak level of the frame centered on the loudest sample (MATLAB ``maxS``).
+
+    Used as the reference for the relative peak-picking threshold. Rather than computing
+    the whole STFT, only the frame around the largest absolute sample is transformed.
+
+    Args:
+        x: Mono input signal.
+        grid: Frame geometry.
+        window: Analysis window.
+
+    Returns:
+        Maximum DFT magnitude of that frame in dB (-inf for an all-zero signal).
+    """
+    if x.size == 0 or not np.any(x):
+        return -np.inf
+    loudest = grid.pad_front + int(np.argmax(np.abs(x)))
+    start = loudest - grid.origin
+    padded = np.concatenate([np.zeros(grid.pad_front), x, np.zeros(grid.window_length)])
+    segment = padded[max(start, 0) : start + grid.window_length]
+    segment = np.pad(segment, (grid.window_length - segment.size, 0))
+    return float(20.0 * np.log10(np.max(np.abs(np.fft.fft(window * segment, grid.n_dft)))))
+
+
+def track(
+    x: np.ndarray,
+    fs: float,
+    analysis: AnalysisConfig | None = None,
+    tracking: TrackingConfig | None = None,
+    writer: PartialsWriter | None = None,
+    keep_alpha: bool = True,
+) -> Partials:
+    """Tracks the partials of a whole signal (``jun_track_partials.m``).
+
+    The peak-picking threshold is relative to the loudest frame of the signal, exactly as
+    in the MATLAB implementation. Use ``PartialTracker`` directly for live input.
+
+    Args:
+        x: Input audio. For multi-channel input of shape (L, C) the first channel is
+            used, like MATLAB.
+        fs: Sampling rate in Hz.
+        analysis: Short-term analysis settings.
+        tracking: Assignment cost settings.
+        writer: Optional writer that receives every frame as soon as it is final.
+        keep_alpha: Whether to keep the full model coefficients.
+
+    Returns:
+        All tracked partials.
+    """
+    analysis = analysis or AnalysisConfig()
+    tracking = tracking or TrackingConfig()
+    x = np.asarray(x, dtype=float)
+    if x.ndim > 1:
+        x = x[:, 0]
+    grid = FrameGrid.from_config(fs, analysis)
+    estimator_window = DdmEstimator(grid, analysis).window
+    threshold = reference_level_db(x, grid, estimator_window) - abs(analysis.peak_threshold_db)
+    tracker = PartialTracker(fs, analysis, tracking, threshold_db=threshold, keep_alpha=keep_alpha)
+
+    frames = _collect(tracker.push(x), writer) + _collect(tracker.flush(), writer)
+    metadata = build_metadata(tracker)
+    if writer is not None:
+        writer.set_summary(tracker.grid, tracker.num_tracks, metadata)
+    log.debug(f"tracked {tracker.num_tracks} partials over {tracker.grid.num_frames} frames")
+    return Partials.from_frames(frames, tracker.grid, tracker.num_tracks, metadata)
+
+
+def build_metadata(tracker: PartialTracker) -> dict[str, Any]:
+    """Settings and provenance recorded with a tracking result."""
+    try:
+        package_version = version("fast-partial-tracking")
+    except PackageNotFoundError:
+        package_version = "unknown"
+    return {
+        "analysis": tracker.analysis.to_dict(),
+        "tracking": tracker.tracking.to_dict(),
+        "threshold_db": tracker.threshold_db,
+        "order": tracker.estimator.order,
+        "window": tracker.analysis.window_name,
+        "package_version": package_version,
+    }
+
+
+def _collect(frames: Iterable[Frame], writer: PartialsWriter | None) -> list[Frame]:
+    frames = list(frames)
+    if writer is not None:
+        for frame in frames:
+            writer.write_frame(frame)
+    return frames

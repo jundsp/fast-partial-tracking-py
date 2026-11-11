@@ -1,22 +1,53 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "fast-partial-tracking"
 version = "0.1.0"
-description = "Fast partial tracking of audio through linear programming (Python port of the DAFx-18 MATLAB code)"
+description = "Fast partial tracking of audio through linear programming (Neri & Depalle, DAFx-18)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Julian Neri" }]
+keywords = ["audio", "sinusoidal modeling", "partial tracking", "DSP", "SDIF"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Intended Audience :: Science/Research",
+]
 dependencies = [
-    "numpy>=2.2.6",
-    "scipy>=1.15.3",
-    "soundfile>=0.14.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+    "pyarrow>=14",
 ]
 
-[build-system]
-requires = ["uv_build>=0.13.7,<0.14.0"]
-build-backend = "uv_build"
-
-[dependency-groups]
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7"]
 dev = [
-    "pytest>=9.2.0",
+    "pytest>=7.0",
+    "pytest-cov",
+    "matplotlib>=3.7",
+]
+
+[project.scripts]
+fpt = "fast_partial_tracking.cli:main"
+
+[project.urls]
+Repository = "https://github.com/jundsp/fast-partial-tracking-py"
+"MATLAB original" = "https://github.com/jundsp/Fast-Partial-Tracking"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fast_partial_tracking*"]
+
+[tool.setuptools.package-data]
+fast_partial_tracking = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "matlab: needs a local MATLAB installation (enable with --matlab)",
 ]

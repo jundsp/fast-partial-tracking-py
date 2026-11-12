@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `fast_partial_tracking.__version__` and `fpt --version`.
+
 ## 0.2.0
 
 A redesign for Python: explicit settings, a partials toolkit, transforms, plotting, a web

@@ -75,3 +75,13 @@ def test_streaming_file_analysis_matches_batch(tmp_path: Path, demo_wav: Path) -
     a, b = read(batch), read(stream)
     np.testing.assert_array_equal(a.track_id, b.track_id)
     np.testing.assert_array_equal(a.omega, b.omega)
+
+
+def test_version(capsys: pytest.CaptureFixture[str]) -> None:
+    import fast_partial_tracking as fpt
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"fpt {fpt.__version__}"
+    assert fpt.__version__ != "0+unknown"

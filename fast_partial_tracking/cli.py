@@ -195,10 +195,17 @@ def cmd_ui(args: argparse.Namespace) -> None:
     subprocess.run(command, check=False)
 
 
+def _package_version() -> str:
+    from fast_partial_tracking import __version__
+
+    return __version__
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Creates the argument parser."""
     parser = argparse.ArgumentParser(prog="fpt", description="Fast partial tracking (Neri & Depalle, DAFx-18)")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {_package_version()}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     analyze = sub.add_parser("analyze", help="track partials of an audio file")

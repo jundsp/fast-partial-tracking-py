@@ -25,11 +25,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+fast = ["numexpr>=2.8"]
 plot = ["matplotlib>=3.7"]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
     "matplotlib>=3.7",
+    "numexpr>=2.8",
 ]
 
 [project.scripts]

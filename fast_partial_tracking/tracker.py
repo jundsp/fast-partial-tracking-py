@@ -16,7 +16,9 @@ blocks of any size and returns frames as soon as they are final.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
@@ -36,6 +38,9 @@ if TYPE_CHECKING:
     from fast_partial_tracking.io.base import PartialsWriter
 
 log = logging.getLogger(__name__)
+
+# Frames analysed per thread-pool batch; bounds the estimates held in memory at once.
+_CHUNK_FRAMES = 64
 
 
 @dataclass(frozen=True)
@@ -86,6 +91,8 @@ class PartialTracker:
             full-scale (amplitude 1) sinusoid. ``track`` instead uses the loudest frame of
             the signal as the reference, like the MATLAB code.
         keep_alpha: Whether emitted frames carry the full model coefficients.
+        workers: Threads used to analyse frames in parallel when a pushed block holds
+            several frames. Linking stays sequential, so results do not depend on it.
     """
 
     def __init__(
@@ -95,6 +102,7 @@ class PartialTracker:
         tracking: TrackingConfig | None = None,
         threshold_db: float | None = None,
         keep_alpha: bool = True,
+        workers: int = 1,
     ) -> None:
         self.analysis = analysis or AnalysisConfig()
         self.tracking = tracking or TrackingConfig()
@@ -115,6 +123,7 @@ class PartialTracker:
         self.num_tracks = 0
         self._prev: FrameEstimate | None = None
         self._pending = _PendingFrame.empty(self.estimator.order)
+        self._executor = ThreadPoolExecutor(workers) if workers > 1 else None
 
     def push(self, samples: np.ndarray) -> list[Frame]:
         """Feeds a block of audio and returns the frames that became final.
@@ -148,26 +157,36 @@ class PartialTracker:
         frames = self._process_available(limit=self.grid.num_frames)
         frames.append(self._emit(self.grid.num_frames - 1, self._pending))
         self._finished = True
+        if self._executor is not None:
+            self._executor.shutdown()
         return frames
 
     def _process_available(self, limit: int | None = None) -> list[Frame]:
+        """Analyses every complete frame in the buffer (up to frame ``limit``)."""
+        n, hop = self.grid.window_length, self.grid.hop
+        count = max(0, (self._buffer.size - n) // hop + 1)
+        if limit is not None:
+            count = min(count, limit - self._next_frame)
         frames: list[Frame] = []
-        n = self.grid.window_length
-        hop = self.grid.hop
-        start = 0
-        while start + n <= self._buffer.size and (limit is None or self._next_frame < limit):
-            emitted = self._process_frame(self._buffer[start : start + n])
-            if emitted is not None:
-                frames.append(emitted)
-            start += hop
-        self._buffer = self._buffer[start:].copy()
+        for first in range(0, count, _CHUNK_FRAMES):
+            starts = range(first * hop, min(first + _CHUNK_FRAMES, count) * hop, hop)
+            for estimate in self._estimate([self._buffer[s : s + n] for s in starts]):
+                emitted = self._consume(estimate)
+                if emitted is not None:
+                    frames.append(emitted)
+        self._buffer = self._buffer[count * hop :].copy()
         return frames
 
-    def _process_frame(self, samples: np.ndarray) -> Frame | None:
-        """Analyzes frame k, links it to frame k-1 and returns the now-final frame k-1."""
+    def _estimate(self, frames: list[np.ndarray]) -> list[FrameEstimate]:
+        """DDM estimates of several frames, in parallel when a thread pool is configured."""
+        if self._executor is None or len(frames) < 2:
+            return [self.estimator(f, self.threshold_db) for f in frames]
+        return list(self._executor.map(lambda f: self.estimator(f, self.threshold_db), frames))
+
+    def _consume(self, estimate: FrameEstimate) -> Frame | None:
+        """Links the next frame's estimate and returns the frame before it, now final."""
         k = self._next_frame
         self._next_frame += 1
-        estimate = self.estimator(samples, self.threshold_db)
         prev, self._prev = self._prev, estimate
         if prev is None:
             return None
@@ -242,6 +261,7 @@ def track(
     tracking: TrackingConfig | None = None,
     writer: PartialsWriter | None = None,
     keep_alpha: bool = True,
+    workers: int | None = None,
 ) -> Partials:
     """Tracks the partials of a whole signal (``jun_track_partials.m``).
 
@@ -256,6 +276,8 @@ def track(
         tracking: Assignment cost settings.
         writer: Optional writer that receives every frame as soon as it is final.
         keep_alpha: Whether to keep the full model coefficients.
+        workers: Threads for frame analysis (default: all CPU cores). Results are
+            identical for any value.
 
     Returns:
         All tracked partials.
@@ -268,7 +290,8 @@ def track(
     grid = FrameGrid.from_config(fs, analysis)
     estimator_window = DdmEstimator(grid, analysis).window
     threshold = reference_level_db(x, grid, estimator_window) - abs(analysis.peak_threshold_db)
-    tracker = PartialTracker(fs, analysis, tracking, threshold_db=threshold, keep_alpha=keep_alpha)
+    workers = workers or os.cpu_count() or 1
+    tracker = PartialTracker(fs, analysis, tracking, threshold_db=threshold, keep_alpha=keep_alpha, workers=workers)
 
     frames = _collect(tracker.push(x), writer) + _collect(tracker.flush(), writer)
     metadata = build_metadata(tracker)

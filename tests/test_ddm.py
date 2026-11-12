@@ -38,7 +38,8 @@ def test_frames_match_matlab(matlab_case: MatlabCase) -> None:
         start = k * grid.hop
         est = estimator(padded[start : start + grid.window_length], threshold)
 
-        np.testing.assert_allclose(est.spectrum, ref["S"], rtol=0, atol=1e-9 * np.abs(ref["S"]).max())
+        ref_s = ref["S"][: est.spectrum.size]
+        np.testing.assert_allclose(est.spectrum, ref_s, rtol=0, atol=1e-9 * np.abs(ref_s).max())
         np.testing.assert_array_equal(est.peaks.bin + 1, np.atleast_1d(ref["peak_bin"]))
         np.testing.assert_array_equal(est.peaks.left + 1, np.atleast_1d(ref["left_bin"]))
         np.testing.assert_array_equal(est.peaks.right + 1, np.atleast_1d(ref["right_bin"]))

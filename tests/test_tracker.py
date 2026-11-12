@@ -86,3 +86,20 @@ def test_config_validation_and_sanitizing() -> None:
     assert config.effective_hop_factor == 8
     assert matlab_round(2.5) == 3 and matlab_round(-2.5) == -3
     assert nextpow2(1) == 0 and nextpow2(1025) == 11
+
+
+def test_results_do_not_depend_on_worker_count(demo_case: MatlabCase) -> None:
+    single = track(demo_case.x, demo_case.fs, demo_case.analysis, demo_case.tracking, workers=1)
+    parallel = track(demo_case.x, demo_case.fs, demo_case.analysis, demo_case.tracking, workers=4)
+    np.testing.assert_array_equal(single.track_id, parallel.track_id)
+    np.testing.assert_array_equal(single.omega, parallel.omega)
+    np.testing.assert_array_equal(single.log_amp, parallel.log_amp)
+
+
+def test_demo_tracks_quickly(demo_case: MatlabCase) -> None:
+    import time
+
+    track(demo_case.x, demo_case.fs, demo_case.analysis, demo_case.tracking)
+    start = time.perf_counter()
+    track(demo_case.x, demo_case.fs, demo_case.analysis, demo_case.tracking)
+    assert time.perf_counter() - start < 1.0

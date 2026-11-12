@@ -23,6 +23,18 @@ from fast_partial_tracking.windows import get_window
 
 log = logging.getLogger(__name__)
 
+try:  # optional, multi-threaded evaluation of the dominant complex exponential
+    import numexpr as _numexpr
+except ImportError:  # pragma: no cover - exercised when the [fast] extra is absent
+    _numexpr = None
+
+
+def complex_exp(z: np.ndarray) -> np.ndarray:
+    """exp(z) for a complex array, using numexpr's threaded kernel when installed."""
+    if _numexpr is not None and z.size > 4096:
+        return _numexpr.evaluate("exp(z)")
+    return np.exp(z)
+
 # Guards against numerically exploding estimates; same limit as jun_ddm.m.
 _EDGE_LIMIT = 1e100
 
@@ -35,7 +47,7 @@ class FrameEstimate:
         alpha: Complex coefficients of the accepted peaks, shape (R, Q + 1), ordered by
             ascending frequency bin.
         peak_bin: DFT bin of each accepted peak, shape (R,).
-        spectrum: Windowed DFT of the frame, shape (n_dft,).
+        spectrum: Windowed DFT of the frame, bins 0..n_dft/2, shape (n_dft // 2 + 1,).
         peaks: All peaks found before the validity checks.
     """
 
@@ -53,10 +65,13 @@ class _DdmSpectra:
     """DFTs that form the DDM linear system of one frame (all phase-centred on n = 0).
 
     Attributes:
-        weighted: Column i holds DFT{w(n) x(n) (i+1) n**i}, i = 0..Q-1, shape (n_dft, Q).
-        derivative: DFT{w'(n) x(n)} - j omega DFT{w(n) x(n)}, shape (n_dft,).
+        spectrum: Plain DFT of w(n) x(n) (first-sample phase reference), shape (K,).
+        weighted: Column i holds DFT{w(n) x(n) (i+1) n**i}, i = 0..Q-1, shape (K, Q) with
+            K = n_dft // 2 + 1.
+        derivative: DFT{w'(n) x(n)} - j omega DFT{w(n) x(n)}, shape (K,).
     """
 
+    spectrum: np.ndarray
     weighted: np.ndarray
     derivative: np.ndarray
 
@@ -85,7 +100,7 @@ class DdmEstimator:
         self.basis = polynomial_basis(self.n, self.order)  # (N, Q+1), MATLAB p
         i = np.arange(1, self.order + 1)
         self.basis_derivative = i * np.power(self.n[:, None], i - 1)  # (N, Q), MATLAB pD
-        self.omega = 2.0 * np.pi * np.arange(n_dft) / n_dft
+        self.omega = 2.0 * np.pi * np.arange(n_dft // 2 + 1) / n_dft
         # Shifts the DFT phase reference from the first frame sample to the origin n = 0.
         self.centering = np.exp(1j * self.omega * grid.origin)
         mid = int(matlab_round(grid.window_length / 2)) - 1
@@ -101,13 +116,12 @@ class DdmEstimator:
         Returns:
             The accepted estimates and the frame's spectrum.
         """
-        windowed = self.window * frame
-        spectrum = np.fft.fft(windowed, self.grid.n_dft)
+        spectra = self._ddm_spectra(frame)
+        spectrum = spectra.spectrum
         peaks = pick_peaks(spectrum[: self.grid.n_dft // 2], threshold_db)
         if len(peaks) == 0:
             return FrameEstimate(np.zeros((0, self.order + 1), complex), peaks.bin, spectrum, peaks)
 
-        spectra = self._ddm_spectra(frame, windowed, spectrum)
         alpha = np.zeros((len(peaks), self.order + 1), dtype=complex)
         alpha[:, 1:], solved = self._solve_slopes(spectra, peaks)
         valid = solved & self._is_stable(alpha)
@@ -115,24 +129,24 @@ class DdmEstimator:
         valid &= self._within_amplitude_bound(alpha, frame)
         return FrameEstimate(alpha[valid], peaks.bin[valid], spectrum, peaks)
 
-    def _ddm_spectra(self, frame: np.ndarray, windowed: np.ndarray, spectrum: np.ndarray) -> _DdmSpectra:
+    def _ddm_spectra(self, frame: np.ndarray) -> _DdmSpectra:
         """DFTs of the frame against the window, its derivative and the polynomial terms.
+
+        All Q + 1 transforms are computed by one real FFT call over the stacked signals.
+        Only bins 0..n_dft/2 are kept: peaks are searched below Nyquist.
 
         Args:
             frame: Raw frame samples x(n).
-            windowed: w(n) x(n).
-            spectrum: DFT of ``windowed``.
         """
-        weighted = np.empty((self.grid.n_dft, self.order), dtype=complex)
-        weighted[:, 0] = spectrum * self.centering
-        if self.order > 1:
-            weighted[:, 1:] = np.fft.fft(windowed[:, None] * self.basis_derivative[:, 1:], self.grid.n_dft, axis=0)
-            weighted[:, 1:] *= self.centering[:, None]
+        windowed = self.window * frame
+        signals = np.column_stack([windowed[:, None] * self.basis_derivative, self.window_derivative * frame])
+        raw = np.fft.rfft(signals, self.grid.n_dft, axis=0)
+        centred = raw * self.centering[:, None]
+        weighted = centred[:, : self.order]
         # Window-derivative DFT plus the DFT-kernel derivative term: together they form
         # -(right-hand side) of the DDM equations.
-        derivative = np.fft.fft(self.window_derivative * frame, self.grid.n_dft) * self.centering
-        derivative += weighted[:, 0] * (-1j * self.omega)
-        return _DdmSpectra(weighted, derivative)
+        derivative = centred[:, self.order] + weighted[:, 0] * (-1j * self.omega)
+        return _DdmSpectra(raw[:, 0], weighted, derivative)
 
     def _solve_slopes(self, spectra: _DdmSpectra, peaks: Peaks) -> tuple[np.ndarray, np.ndarray]:
         """Solves the DDM systems A alpha_{1..Q} = b of all peaks in one batch.
@@ -176,14 +190,15 @@ class DdmEstimator:
     def _estimate_alpha0(self, alpha: np.ndarray, peak_value: np.ndarray, peak_bin: np.ndarray) -> np.ndarray:
         """Estimates alpha_0 from the peak bin (jun_ddm.m's single-bin approximation).
 
-        With alpha_1..Q known, the DFT of w(n) exp(sum_{i>=1} alpha_i n**i) at the peak
-        bin is computed directly; alpha_0 is the log-ratio of the measured peak value to
-        that model DFT value.
+        With alpha_1..Q known, the model's DFT at the peak frequency omega_b is
+        sum_n w(n) exp(sum_{i>=1} alpha_i n**i - j omega_b n); alpha_0 is the log-ratio of
+        the measured peak value to it. The DFT kernel is folded into the exponent so only
+        one complex exponential is evaluated per sample and peak.
         """
         with np.errstate(all="ignore"):
-            gamma = self.window[:, None] * np.exp(self.basis[:, 1:] @ alpha[:, 1:].T)  # (N, P)
-            kernel = np.exp(-1j * self.n[:, None] * self.omega[peak_bin][None, :])
-            model_value = np.sum(kernel * gamma, axis=0)
+            exponent = self.basis[:, 1:] @ alpha[:, 1:].T  # (N, P)
+            exponent -= 1j * self.n[:, None] * self.omega[peak_bin][None, :]
+            model_value = self.window @ complex_exp(exponent)
             return np.log(peak_value) - np.log(model_value)
 
     def _within_amplitude_bound(self, alpha: np.ndarray, frame: np.ndarray) -> np.ndarray:

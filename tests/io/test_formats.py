@@ -146,7 +146,7 @@ def test_unsupported_extension(tmp_path: Path, demo_partials: Partials) -> None:
     with pytest.raises(ValueError):
         demo_partials.save(tmp_path / "out.csv")
     with pytest.raises(ValueError):
-        read(tmp_path / "out.sdif")
+        read(tmp_path / "out.csv")
 
 
 @pytest.mark.parametrize("suffix", [".parquet", ".arrows"])

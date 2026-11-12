@@ -27,7 +27,8 @@ import numpy as np
 
 from fast_partial_tracking.framing import FrameGrid
 from fast_partial_tracking.io.base import PartialsWriter
-from fast_partial_tracking.partials import Frame
+from fast_partial_tracking.io.points import from_points
+from fast_partial_tracking.partials import Frame, Partials
 
 _FILE_HEADER = struct.Struct(">4sIII")
 _FRAME_HEADER = struct.Struct(">4sIdiI")
@@ -162,3 +163,29 @@ def read_sdif_tracks(path: str | Path) -> list[tuple[float, np.ndarray]]:
         for matrix in frame.matrices
         if matrix.signature == TRACK_SIGNATURE.decode()
     ]
+
+
+def read_sdif(path: str | Path, fs: float | None = None) -> Partials:
+    """Reads the sinusoidal tracks of an SDIF file (``1TRC`` or ``1HRM`` matrices) as partials.
+
+    Works for files from this package and from other SDIF tools. SDIF stores no sampling
+    rate or analysis settings, so the frame grid is inferred from the frame times (see
+    ``fast_partial_tracking.io.points.from_points``).
+
+    Args:
+        path: Source ``.sdif`` file.
+        fs: Sampling rate in Hz (default 44.1 kHz).
+
+    Returns:
+        The partials. Stored phases are kept; if they are all zero the result is marked
+        for phase-integrating synthesis.
+    """
+    signatures = {TRACK_SIGNATURE.decode(), "1HRM"}
+    blocks = [(frame.time, matrix.data) for frame in iter_sdif(path) for matrix in frame.matrices
+              if matrix.signature in signatures and matrix.data.shape[1] >= 3]
+    if not blocks:
+        raise ValueError(f"{path} contains no 1TRC or 1HRM tracks")
+    time = np.concatenate([np.full(data.shape[0], t) for t, data in blocks])
+    data = np.concatenate([np.pad(d[:, :4], ((0, 0), (0, max(0, 4 - d.shape[1])))) for _, d in blocks])
+    return from_points(time, data[:, 0], data[:, 1], data[:, 2], phase=data[:, 3], fs=fs,
+                       metadata={"source_format": "sdif"})

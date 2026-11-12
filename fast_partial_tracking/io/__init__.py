@@ -5,7 +5,7 @@ extension  format                use
 ========== ===================== ==============================================
 .parquet   Apache Parquet        recommended storage; pandas/polars/DuckDB/MATLAB
 .arrows    Arrow IPC stream      live pipes; readable while being written
-.sdif      SDIF 1TRC (binary)    compatibility with SDIF tools (write-only here)
+.sdif      SDIF 1TRC (binary)    compatibility with SDIF tools
 .bin       MATLAB demo format    compatibility with the MATLAB implementation
 ========== ===================== ==============================================
 
@@ -22,7 +22,8 @@ from fast_partial_tracking.io.arrow_stream import ArrowStreamWriter, iter_arrow_
 from fast_partial_tracking.io.base import PartialsWriter
 from fast_partial_tracking.compat.matlab_bin import MatlabBinWriter, read_matlab_bin
 from fast_partial_tracking.io.parquet import ParquetWriter, read_parquet
-from fast_partial_tracking.io.sdif import SdifWriter, iter_sdif, read_sdif_tracks
+from fast_partial_tracking.io.points import from_points
+from fast_partial_tracking.io.sdif import SdifWriter, iter_sdif, read_sdif, read_sdif_tracks
 from fast_partial_tracking.partials import Partials
 
 __all__ = [
@@ -32,12 +33,14 @@ __all__ = [
     "PartialsWriter",
     "SdifWriter",
     "iter_arrow_stream",
+    "from_points",
     "iter_sdif",
     "open_writer",
     "read",
     "read_arrow_stream",
     "read_matlab_bin",
     "read_parquet",
+    "read_sdif",
     "read_sdif_tracks",
     "write",
 ]
@@ -91,11 +94,13 @@ def write(partials: Partials, path: str | Path, include_alpha: bool = True, **kw
         writer.write_partials(partials)
 
 
-def read(path: str | Path) -> Partials:
-    """Reads partials from a .parquet, .arrows/.arrow or .bin file.
+def read(path: str | Path, fs: float | None = None) -> Partials:
+    """Reads partials from a .parquet, .arrows/.arrow, .bin or .sdif file.
 
     Args:
         path: Source file.
+        fs: Sampling rate for SDIF files, which do not store one (default 44.1 kHz).
+            Ignored for the other formats.
 
     Returns:
         The stored partials.
@@ -106,6 +111,7 @@ def read(path: str | Path) -> Partials:
         ".arrows": read_arrow_stream,
         ".arrow": read_arrow_stream,
         ".bin": read_matlab_bin,
+        ".sdif": lambda p: read_sdif(p, fs=fs),
     }
     if suffix not in readers:
         raise ValueError(f"cannot read {suffix!r} files into Partials; supported: {sorted(readers)}")

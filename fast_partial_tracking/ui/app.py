@@ -24,6 +24,8 @@ from fast_partial_tracking.ui import figures
 
 DEMO = "Demo voice (/kara/)"
 UPLOAD = "Upload a file..."
+OPEN_PARTIALS = "Open a partials file..."
+PARTIALS_TYPES = ["parquet", "arrows", "arrow", "sdif", "bin"]
 
 
 def cli_audio() -> Path | None:
@@ -33,14 +35,16 @@ def cli_audio() -> Path | None:
     return parser.parse_known_args(sys.argv[1:])[0].audio
 
 
-def load_source() -> tuple[np.ndarray, int, str] | None:
-    """Sidebar: choose the input signal (demo, synthetic, upload or a CLI path)."""
+def load_source() -> tuple[np.ndarray, int, str] | str | None:
+    """Sidebar: choose the input (demo, synthetic, upload, a CLI path, or ``OPEN_PARTIALS``)."""
     st.sidebar.header("Audio")
-    options = [DEMO] + [f"Synthetic: {name}" for name in fpt.data.SYNTHETIC] + [UPLOAD]
+    options = [DEMO] + [f"Synthetic: {name}" for name in fpt.data.SYNTHETIC] + [UPLOAD, OPEN_PARTIALS]
     path = cli_audio()
     if path is not None:
         options.insert(0, path.name)
     choice = st.sidebar.selectbox("Source", options)
+    if choice == OPEN_PARTIALS:
+        return OPEN_PARTIALS
     if path is not None and choice == path.name:
         audio, fs = sf.read(path, always_2d=True)
     elif choice == DEMO:
@@ -60,6 +64,38 @@ def load_source() -> tuple[np.ndarray, int, str] | None:
         start, end = st.sidebar.slider("Time range (s)", 0.0, float(duration), (0.0, float(duration)), step=0.05)
         x = x[int(start * fs) : max(int(end * fs), int(start * fs) + 1)]
     return x, int(fs), choice
+
+
+@st.cache_data(max_entries=8, show_spinner="Reading partials...")
+def read_partials(data: bytes, suffix: str, fs: float | None) -> tuple[fpt.Partials, np.ndarray]:
+    """Reads an uploaded partials file and resynthesizes it (cached per file)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / f"partials{suffix}"
+        path.write_bytes(data)
+        partials = fpt.io.read(path, fs=fs)
+    return partials, fpt.synthesize(partials)
+
+
+def load_partials_file() -> tuple[fpt.Partials, np.ndarray, str, str] | None:
+    """Sidebar: upload a partials file; returns (partials, resynthesis, name, signature)."""
+    upload = st.sidebar.file_uploader("Partials file", type=PARTIALS_TYPES,
+                                      help="Files written by this package, by the MATLAB code (.bin) or by "
+                                           "other SDIF tools.")
+    if upload is None:
+        return None
+    suffix = Path(upload.name).suffix.lower()
+    fs = None
+    if suffix == ".sdif":
+        fs = st.sidebar.number_input("Sampling rate (Hz)", 8000, 192000, 44100, 50,
+                                     help="SDIF files do not store the sampling rate.")
+    data = upload.getvalue()
+    try:
+        partials, y = read_partials(data, suffix, fs)
+    except ValueError as error:
+        st.error(f"Could not read {upload.name}: {error}")
+        return None
+    signature = json.dumps([upload.name, hashlib.blake2b(data, digest_size=8).hexdigest(), fs])
+    return partials, y, upload.name, signature
 
 
 def settings(fs: int) -> tuple[fpt.AnalysisConfig, fpt.TrackingConfig, int]:
@@ -197,13 +233,16 @@ def display_controls(fs: int) -> dict[str, Any]:
             "color_by": color_by, "weight_by_level": weighted}
 
 
-def overview_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int, signature: str) -> None:
+def overview_tab(partials: fpt.Partials, x: np.ndarray | None, y: np.ndarray, fs: int, signature: str) -> None:
     summary = fpt.selection.summarize(partials)
     selection_state(signature, partials.num_tracks)
     mode = selection_tools(partials, summary, fs)
     display = display_controls(fs)
     selected = st.session_state.selection
-    figure = figures.overview_figure(partials, x, y, selected=selected, **display)
+    if x is None:
+        figure = figures.partials_figure(partials, selected=selected, height=640, **display)
+    else:
+        figure = figures.overview_figure(partials, x, y, selected=selected, **display)
     event = st.plotly_chart(figure, width="stretch", on_select="rerun",
                             selection_mode=("points", "box", "lasso"), key="partials_plot")
     if plot_selection(figure, event, mode):
@@ -238,16 +277,17 @@ def selection_panel(partials: fpt.Partials, summary: fpt.selection.TrackSummary,
     right.plotly_chart(figures.track_figure(partials.track(inspect)), width="stretch")
 
 
-def listen_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int) -> None:
+def listen_tab(partials: fpt.Partials, x: np.ndarray | None, y: np.ndarray, fs: int) -> None:
+    signals = [("Resynthesis", y)] if x is None else [("Original", x), ("Resynthesis", y), ("Residual (noise)", x - y)]
     columns = st.columns(3)
-    for column, (label, signal) in zip(columns, [("Original", x), ("Resynthesis", y), ("Residual (noise)", x - y)]):
+    for column, (label, signal) in zip(columns, signals):
         column.caption(label)
         column.audio(wav_bytes(signal, fs), format="audio/wav")
     st.subheader("Play partials")
     selected = st.session_state.get("selection", np.zeros(0, dtype=np.int64))
     sources = ["Selected partials", "All partials"] if len(selected) else ["All partials"]
     source = st.radio("Play", sources, horizontal=True)
-    duration = x.size / fs
+    duration = (x.size if x is not None else partials.grid.signal_length or y.size) / fs
     left, middle, right = st.columns([3, 2, 1])
     start, end = left.slider("From–to (s)", 0.0, duration, (0.0, duration), 0.01, key="play_range")
     speed = middle.select_slider("Speed", [0.25, 0.5, 0.75, 1.0, 1.5, 2.0], value=1.0,
@@ -300,8 +340,8 @@ def details_tab(partials: fpt.Partials) -> None:
     st.dataframe(partials.to_pandas().head(500), width="stretch", hide_index=True)
 
 
-def export_tab(partials: fpt.Partials, y: np.ndarray, fs: int, name: str, analysis: fpt.AnalysisConfig,
-               tracking: fpt.TrackingConfig) -> None:
+def export_tab(partials: fpt.Partials, y: np.ndarray, fs: int, name: str, analysis: fpt.AnalysisConfig | None,
+               tracking: fpt.TrackingConfig | None) -> None:
     stem = Path(name).stem.replace(" ", "_").replace(":", "")
     chosen = scope(partials, "export_scope")
     if chosen is not partials:
@@ -310,28 +350,40 @@ def export_tab(partials: fpt.Partials, y: np.ndarray, fs: int, name: str, analys
     columns[0].download_button("Partials (.parquet)", file_bytes(partials, ".parquet"), f"{stem}.parquet")
     columns[1].download_button("Partials (.sdif)", file_bytes(partials, ".sdif"), f"{stem}.sdif")
     columns[2].download_button("Resynthesis (.wav)", wav_bytes(y, fs), f"{stem}_resynthesis.wav")
-    settings_json = json.dumps({"analysis": analysis.to_dict(), "tracking": tracking.to_dict()}, indent=2)
-    columns[3].download_button("Settings (.json)", settings_json, f"{stem}_settings.json")
-    st.caption("Settings files work with `fpt analyze --config settings.json`.")
+    if analysis is not None and tracking is not None:
+        settings_json = json.dumps({"analysis": analysis.to_dict(), "tracking": tracking.to_dict()}, indent=2)
+        columns[3].download_button("Settings (.json)", settings_json, f"{stem}_settings.json")
+        st.caption("Settings files work with `fpt analyze --config settings.json`.")
 
 
 def main() -> None:
     st.set_page_config(page_title="Partial tracking", layout="wide")
     st.title("Fast partial tracking")
     source = load_source()
-    if source is None:
-        st.info("Choose an audio file in the sidebar.")
-        return
-    x, fs, name = source
-    analysis, tracking, prune = settings(fs)
-    partials, y, elapsed = analyze(x, fs, analysis.to_dict(), tracking.to_dict(), prune)
-    signature = json.dumps([name, hashlib.blake2b(x.tobytes(), digest_size=8).hexdigest(), analysis.to_dict(), tracking.to_dict(), prune], default=str)
-
-    metrics = st.columns(4)
-    metrics[0].metric("R-SNR", f"{fpt.rsnr(x, y):.2f} dB")
-    metrics[1].metric("Partials", partials.num_tracks)
-    metrics[2].metric("Frames", partials.num_frames)
-    metrics[3].metric("Analysis time", f"{elapsed * 1000:.0f} ms")
+    analysis = tracking = None
+    if isinstance(source, tuple):
+        x, fs, name = source
+        analysis, tracking, prune = settings(fs)
+        partials, y, elapsed = analyze(x, fs, analysis.to_dict(), tracking.to_dict(), prune)
+        signature = json.dumps([name, hashlib.blake2b(x.tobytes(), digest_size=8).hexdigest(), analysis.to_dict(),
+                                tracking.to_dict(), prune], default=str)
+        metrics = st.columns(4)
+        metrics[0].metric("R-SNR", f"{fpt.rsnr(x, y):.2f} dB")
+        metrics[1].metric("Partials", partials.num_tracks)
+        metrics[2].metric("Frames", partials.num_frames)
+        metrics[3].metric("Analysis time", f"{elapsed * 1000:.0f} ms")
+    else:
+        opened = load_partials_file() if source == OPEN_PARTIALS else None
+        if opened is None:
+            st.info("Choose an audio file or a partials file in the sidebar.")
+            return
+        partials, y, name, signature = opened
+        x, fs = None, int(round(partials.grid.fs))
+        metrics = st.columns(4)
+        metrics[0].metric("Partials", partials.num_tracks)
+        metrics[1].metric("Frames", partials.num_frames)
+        metrics[2].metric("Duration", f"{y.size / fs:.2f} s")
+        metrics[3].metric("Hop", f"{partials.grid.hop} samples")
 
     tabs = st.tabs(["Partials", "Listen", "Transform", "Details", "Export"])
     with tabs[0]:
@@ -344,6 +396,5 @@ def main() -> None:
         details_tab(partials)
     with tabs[4]:
         export_tab(partials, y, fs, name, analysis, tracking)
-
 
 main()

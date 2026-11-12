@@ -85,3 +85,12 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert exc.value.code == 0
     assert capsys.readouterr().out.strip() == f"fpt {fpt.__version__}"
     assert fpt.__version__ != "0+unknown"
+
+
+def test_sdif_input_with_fs(tmp_path: Path, demo_wav: Path) -> None:
+    sdif = tmp_path / "p.sdif"
+    main(["analyze", str(demo_wav), "-o", str(sdif)])
+    main(["convert", str(sdif), "-o", str(tmp_path / "p.parquet"), "--fs", "44100"])
+    main(["synth", str(sdif), "-o", str(tmp_path / "y.wav"), "--fs", "44100"])
+    assert read(tmp_path / "p.parquet").grid.fs == 44100.0
+    assert (tmp_path / "y.wav").stat().st_size > 0

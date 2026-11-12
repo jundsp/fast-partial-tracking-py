@@ -119,7 +119,7 @@ def _analyze_batch(args: argparse.Namespace, analysis: AnalysisConfig, tracking:
 
 def cmd_synth(args: argparse.Namespace) -> None:
     """Resynthesizes a partials file to audio."""
-    partials = read(args.input)
+    partials = read(args.input, fs=args.fs)
     y = synthesize(partials, phase=args.phase)
     sf.write(str(args.output), y, int(round(partials.grid.fs)), subtype="FLOAT")
     log.info(f"wrote {y.size} samples at {partials.grid.fs:g} Hz -> {args.output}")
@@ -127,13 +127,13 @@ def cmd_synth(args: argparse.Namespace) -> None:
 
 def cmd_convert(args: argparse.Namespace) -> None:
     """Converts between partial file formats (e.g. Parquet to SDIF)."""
-    write(read(args.input), args.output)
+    write(read(args.input, fs=args.fs), args.output)
     log.info(f"{args.input} -> {args.output}")
 
 
 def cmd_info(args: argparse.Namespace) -> None:
     """Summarizes a partials file: settings, counts and a partial-length histogram."""
-    partials = read(args.input)
+    partials = read(args.input, fs=args.fs)
     for line in describe(partials, str(args.input)):
         log.info(line)
 
@@ -168,7 +168,7 @@ def cmd_plot(args: argparse.Namespace) -> None:
     """Plots a partials file (optionally over the audio's spectrogram) to an image."""
     from fast_partial_tracking.plot import figure
 
-    partials = read(args.input)
+    partials = read(args.input, fs=args.fs)
     audio = None
     if args.audio:
         audio, _ = sf.read(str(args.audio), always_2d=True)
@@ -201,6 +201,9 @@ def _package_version() -> str:
     return __version__
 
 
+FS_HELP = "sampling rate of an .sdif input, which SDIF does not store (default 44100)"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Creates the argument parser."""
     parser = argparse.ArgumentParser(prog="fpt", description="Fast partial tracking (Neri & Depalle, DAFx-18)")
@@ -219,21 +222,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     synth = sub.add_parser("synth", help="resynthesize a partials file")
     synth.add_argument("input", type=Path)
+    synth.add_argument("--fs", type=float, default=None, help=FS_HELP)
     synth.add_argument("-o", "--output", type=Path, required=True, help="audio file, e.g. .wav")
     synth.add_argument("--phase", choices=["measured", "integrated"], default=None)
     synth.set_defaults(func=cmd_synth)
 
     convert = sub.add_parser("convert", help="convert between partial file formats")
     convert.add_argument("input", type=Path)
+    convert.add_argument("--fs", type=float, default=None, help=FS_HELP)
     convert.add_argument("-o", "--output", type=Path, required=True)
     convert.set_defaults(func=cmd_convert)
 
     info = sub.add_parser("info", help="summarize a partials file")
     info.add_argument("input", type=Path)
+    info.add_argument("--fs", type=float, default=None, help=FS_HELP)
     info.set_defaults(func=cmd_info)
 
     plot = sub.add_parser("plot", help="plot a partials file to an image")
     plot.add_argument("input", type=Path)
+    plot.add_argument("--fs", type=float, default=None, help=FS_HELP)
     plot.add_argument("-o", "--output", type=Path, required=True, help="image file, e.g. .png or .pdf")
     plot.add_argument("--audio", type=Path, help="draw this audio's spectrogram underneath")
     plot.add_argument("--color-by", choices=["track", "amplitude", "none"], default="track")

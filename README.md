@@ -74,7 +74,8 @@ fpt ui your.wav
 ```
 
 Without a file it opens the demo voice; synthetic test signals and file upload are in the
-sidebar.
+sidebar. It can also open a partials file (`.parquet`, `.arrows`, `.sdif` or `.bin`) without
+any audio, to view, select, play, transform and export it.
 
 ![The web app: analysis and tracking settings in the sidebar, R-SNR and timing at the top, and the waveform above the partials drawn over the spectrogram](docs/assets/web_app.png)
 
@@ -154,6 +155,7 @@ fpt analyze in.wav -o p.parquet --preset matlab
 fpt analyze in.wav -o p.parquet --config settings.json --prune 3
 fpt synth partials.parquet -o resynthesis.wav
 fpt convert partials.parquet -o partials.sdif
+fpt convert other_tool.sdif -o partials.parquet --fs 48000
 fpt plot partials.parquet -o partials.png --audio in.wav
 fpt info partials.parquet
 fpt ui in.wav
@@ -163,6 +165,8 @@ fpt ui in.wav
   constant memory; `--preset matlab` uses the exact MATLAB `jun_demo` settings.
 - `fpt info` prints a summary and a partial-length histogram. `fpt <command> --help` lists
   every option.
+- `--fs` sets the sampling rate when reading `.sdif` files, which do not store one
+  (default 44100).
 
 ## File formats
 
@@ -173,7 +177,7 @@ frame, so neither long nor live analyses need to fit in memory.
 |---|---|---|
 | `.parquet` | Apache Parquet | Recommended. Columnar and zstd-compressed. Opens directly in pandas, polars, DuckDB and MATLAB (`parquetread`). |
 | `.arrows` | Arrow IPC stream | Live pipelines: can be read while it's still being written (`fpt.io.iter_arrow_stream`). |
-| `.sdif` | SDIF `1TRC`, binary | SDIF tools such as AudioSculpt and OpenMusic. Written directly; checked with IRCAM's SDIF library. |
+| `.sdif` | SDIF `1TRC`, binary | SDIF tools such as AudioSculpt and OpenMusic. Written directly; checked with IRCAM's SDIF library. Reading accepts `1TRC` and `1HRM` tracks from any SDIF tool; the frame grid is inferred from the frame times. |
 | `.bin` | MATLAB demo format | Byte-compatible with `jun_write_partials.m` / `jun_read_partials.m`. |
 
 Columns: `frame`, `time_s`, `track_id`, `frequency_hz`, `amplitude` (the real sinusoid's

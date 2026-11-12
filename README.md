@@ -16,7 +16,7 @@ resynthesized, edited, plotted or exported. The package includes:
 A preset reproduces the original [MATLAB code](https://github.com/jundsp/Fast-Partial-Tracking)
 exactly, and tests check this against reference data exported from MATLAB.
 
-![Partials of a voice recording drawn over its spectrogram](docs/assets/demo_partials.png)
+![Partials of a voice recording drawn over its spectrogram](docs/assets/partials_kara.png)
 
 *Partials of the bundled voice recording (/kara/), each in its own color, over the spectrogram (`fpt.plot.figure(fpt.track(x, fs, fpt.AnalysisConfig(threshold_db=-50)), x)`).*
 

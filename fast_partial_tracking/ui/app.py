@@ -153,6 +153,7 @@ def file_bytes(partials: fpt.Partials, suffix: str) -> bytes:
 
 
 SELECT_MODES = {"Replace": "replace", "Add": "add", "Remove": "remove"}
+DRAG_MODES = {"Zoom": "zoom", "Box": "select", "Lasso": "lasso", "Pan": "pan"}
 
 
 def selection_state(signature: str, num_tracks: int) -> np.ndarray:
@@ -165,24 +166,40 @@ def selection_state(signature: str, num_tracks: int) -> np.ndarray:
     return selection[selection < num_tracks]
 
 
-def apply_selection(ids: np.ndarray, mode: str) -> None:
-    """Combines new labels with the current selection (replace, add or remove)."""
+def apply_selection(ids: np.ndarray, mode: str, rerun: bool = True) -> None:
+    """Combines new labels with the current selection (replace, add or remove).
+
+    Reruns the app when the selection changed, so every view (including the count above
+    the plot, drawn before the plot reports its selection) shows the new selection.
+    """
     current = st.session_state.selection
     ids = np.asarray(ids, dtype=np.int64)
     if mode == "add":
         ids = np.union1d(current, ids)
     elif mode == "remove":
         ids = np.setdiff1d(current, ids)
-    st.session_state.selection = np.unique(ids)
+    ids = np.unique(ids)
+    changed = not np.array_equal(ids, current)
+    st.session_state.selection = ids
+    if changed and rerun:
+        st.rerun()
 
 
 def selection_tools(partials: fpt.Partials, summary: fpt.selection.TrackSummary, fs: int) -> str:
     """Selection controls above the plot; returns the mode for selections made on the plot."""
-    mode = SELECT_MODES[st.radio("Plot selection", list(SELECT_MODES), horizontal=True,
-                                 help="Click a partial, or drag a box or lasso on the plot (pick the tool in the "
-                                      "plot's toolbar). Double-click the plot to clear the box.")]
+    drag_column, mode_column, status = st.columns([3, 3, 2])
+    st.session_state.dragmode = DRAG_MODES[drag_column.radio(
+        "Drag on the plot to", list(DRAG_MODES), horizontal=True, key="drag_choice",
+        help="Zoom: drag a box to zoom in, double-click to zoom out. Box and Lasso select every partial they "
+             "touch. Clicking a partial selects it in any mode.")]
+    mode = SELECT_MODES[mode_column.radio(
+        "Selecting", list(SELECT_MODES), horizontal=True,
+        help="Replace starts a new selection; Add and Remove change the current one. Clear selection shows "
+             "all partials normally again.")]
+    count = len(st.session_state.selection)
+    status.markdown(f"**{count} of {partials.num_tracks} partials selected**" if count else "**No partials selected**")
     duration = (partials.grid.signal_length or 0) / fs
-    rules, harmonic, actions = st.columns([2, 2, 1])
+    rules, harmonic, everything, invert, clear = st.columns([3, 3, 2, 2, 2])
     with rules.popover("Select by rule", width="stretch"), st.form("rule_select", border=False):
         time_range = st.slider("Overlaps time (s)", 0.0, max(duration, 0.01), (0.0, max(duration, 0.01)), 0.01)
         band = st.slider("Mean frequency (Hz)", 0, fs // 2, (0, fs // 2), 10)
@@ -194,19 +211,18 @@ def selection_tools(partials: fpt.Partials, summary: fpt.selection.TrackSummary,
     with harmonic.popover("Select harmonics", width="stretch"), st.form("harmonic_select", border=False):
         f0 = st.number_input("Fundamental (Hz)", 20.0, fs / 2, 220.0, 1.0)
         cents = st.slider("Tolerance (cents)", 5, 100, 40, 5)
-        count = st.slider("Highest harmonic", 1, 100, 30)
+        top = st.slider("Highest harmonic", 1, 100, 30)
         time_range = st.slider("Overlaps time (s)", 0.0, max(duration, 0.01), (0.0, max(duration, 0.01)), 0.01,
                                key="harmonic_time")
         if st.form_submit_button("Select"):
-            apply_selection(fpt.selection.harmonics(partials, f0, cents, count, time_s=time_range, summary=summary),
+            apply_selection(fpt.selection.harmonics(partials, f0, cents, top, time_s=time_range, summary=summary),
                             mode)
-    with actions.popover("Select...", width="stretch"):
-        if st.button("All", width="stretch"):
-            apply_selection(summary.id[summary.frames > 0], "replace")
-        if st.button("Invert", width="stretch"):
-            apply_selection(np.setdiff1d(summary.id[summary.frames > 0], st.session_state.selection), "replace")
-        if st.button("None", width="stretch"):
-            apply_selection(np.zeros(0, dtype=np.int64), "replace")
+    if everything.button("Select all", width="stretch"):
+        apply_selection(summary.id[summary.frames > 0], "replace")
+    if invert.button("Invert", width="stretch"):
+        apply_selection(np.setdiff1d(summary.id[summary.frames > 0], st.session_state.selection), "replace")
+    if clear.button("Clear selection", width="stretch", disabled=not count):
+        apply_selection(np.zeros(0, dtype=np.int64), "replace")
     return mode
 
 
@@ -221,10 +237,21 @@ def plot_selection(figure: Any, event: Any, mode: str) -> bool:
     return True
 
 
-def display_controls(fs: int) -> dict[str, Any]:
-    """Display options for the partials plot, as keyword arguments of the figure functions."""
-    band, scale, color, weight = st.columns([3, 2, 2, 1])
-    low, high = band.slider("Frequency range (Hz)", 0, fs // 2, (0, min(5000, fs // 2)), 10)
+def display_controls(partials: fpt.Partials, fs: int) -> dict[str, Any]:
+    """Display options for the partials plot, as keyword arguments of the figure functions.
+
+    The initial frequency range reaches the highest partial (rounded up to 500 Hz, at most
+    Nyquist); zooming and panning on the plot can go further.
+    """
+    view_help = ("The plotted range. Zooming with the mouse is temporary: the plot is redrawn, at these ranges, "
+                 "whenever the selection or a setting changes.")
+    time_column, band = st.columns(2)
+    duration = max((partials.grid.signal_length or 0) / fs, 0.01)
+    start, end = time_column.slider("Time range (s)", 0.0, duration, (0.0, duration), 0.01, help=view_help)
+    highest = float(partials.frequency_hz.max()) if len(partials) else fs / 2
+    default_top = int(min(fs // 2, 500 * np.ceil(highest / 500)))
+    low, high = band.slider("Frequency range (Hz)", 0, fs // 2, (0, default_top), 10, help=view_help)
+    scale, color, weight = st.columns([2, 2, 1])
     scale = scale.radio("Frequency axis", ["linear", "log", "notes"], horizontal=True,
                         format_func=lambda s: {"linear": "Linear", "log": "Log", "notes": "Notes"}[s],
                         help=f"Log and note axes start at {figures.LOG_MIN_HZ:g} Hz or above.")
@@ -232,25 +259,24 @@ def display_controls(fs: int) -> dict[str, Any]:
                            format_func=lambda c: "by partial" if c == "track" else "by level")
     weighted = weight.toggle("Weight", help="Draw loud partials thick and quiet ones thin and faint.")
     return {"min_frequency_hz": float(low), "max_frequency_hz": float(max(high, low + 10)), "frequency_scale": scale,
-            "color_by": color_by, "weight_by_level": weighted}
+            "color_by": color_by, "weight_by_level": weighted, "time_range_s": (start, max(end, start + 0.01))}
 
 
 def overview_tab(partials: fpt.Partials, x: np.ndarray | None, y: np.ndarray, fs: int, signature: str) -> None:
     summary = fpt.selection.summarize(partials)
     selection_state(signature, partials.num_tracks)
     mode = selection_tools(partials, summary, fs)
-    display = display_controls(fs)
+    display = display_controls(partials, fs)
     selected = st.session_state.selection
     if x is None:
         figure = figures.partials_figure(partials, selected=selected, height=640, **display)
     else:
         figure = figures.overview_figure(partials, x, y, selected=selected, **display)
+    figure.update_layout(dragmode=st.session_state.get("dragmode", "zoom"))
     event = st.plotly_chart(figure, width="stretch", on_select="rerun",
                             selection_mode=("points", "box", "lasso"), key="partials_plot")
-    if plot_selection(figure, event, mode):
-        st.rerun()
+    plot_selection(figure, event, mode)
     if not len(selected):
-        st.caption("No partials selected: click, box or lasso partials on the plot, or use the tools above.")
         return
     selection_panel(partials, summary, selected, fs)
 
@@ -369,6 +395,7 @@ def main() -> None:
         partials, y, elapsed = analyze(x, fs, analysis.to_dict(), tracking.to_dict(), prune)
         signature = json.dumps([name, hashlib.blake2b(x.tobytes(), digest_size=8).hexdigest(), analysis.to_dict(),
                                 tracking.to_dict(), prune], default=str)
+        st.caption(f"{name} · {fs / 1000:g} kHz · {x.size / fs:.2f} s")
         metrics = st.columns(4)
         metrics[0].metric("R-SNR", f"{fpt.rsnr(x, y):.2f} dB")
         metrics[1].metric("Partials", partials.num_tracks)
@@ -381,6 +408,7 @@ def main() -> None:
             return
         partials, y, name, signature = opened
         x, fs = None, int(round(partials.grid.fs))
+        st.caption(f"{name} · {fs / 1000:g} kHz")
         metrics = st.columns(4)
         metrics[0].metric("Partials", partials.num_tracks)
         metrics[1].metric("Frames", partials.num_frames)

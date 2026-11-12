@@ -16,6 +16,9 @@ _SELECTED_EXTRA_WIDTH = 1.0
 # (line width, opacity) for quiet, medium and loud partials; loud is the default weight.
 _WEIGHTS = ((0.8, 0.4), (1.4, 0.7), (2.2, 1.0))
 LOG_MIN_HZ = 20.0
+# Dragging draws a zoom box (which cannot leave the frame); uirevision keeps the user's zoom
+# and chosen tool when the figure is redrawn, e.g. after a selection.
+_INTERACTION = {"dragmode": "zoom", "uirevision": "partials"}
 
 
 def _go() -> Any:
@@ -185,18 +188,23 @@ def _polylines(partials: Partials, rows: np.ndarray) -> tuple[np.ndarray, np.nda
     return x, y, custom
 
 
-def frequency_axis(scale: str, low_hz: float, high_hz: float) -> dict[str, Any]:
+def frequency_axis(scale: str, low_hz: float, high_hz: float, nyquist_hz: float | None = None) -> dict[str, Any]:
     """Plotly y-axis settings for a frequency range on a ``"linear"``, ``"log"`` or ``"notes"`` scale.
 
     ``"notes"`` is a log axis labelled with note names: every C when the range spans more
-    than three octaves, otherwise every natural note.
+    than three octaves, otherwise every natural note. With ``nyquist_hz``, panning and
+    zooming are limited to 0 Hz (or ``LOG_MIN_HZ`` on log axes) up to that frequency.
     """
     if scale == "linear":
-        return {"type": "linear", "range": [low_hz, high_hz], "tickformat": ",d", "title_text": "Frequency (Hz)"}
+        bounds = {} if nyquist_hz is None else {"minallowed": 0.0, "maxallowed": nyquist_hz}
+        return {"type": "linear", "range": [low_hz, high_hz], "tickformat": ",d", "title_text": "Frequency (Hz)",
+                **bounds}
     if scale not in ("log", "notes"):
         raise ValueError(f"scale must be 'linear', 'log' or 'notes', got {scale!r}")
     low_hz = max(low_hz, LOG_MIN_HZ)
     axis = {"type": "log", "range": [np.log10(low_hz), np.log10(high_hz)], "title_text": "Frequency (Hz)"}
+    if nyquist_hz is not None:
+        axis.update(minallowed=np.log10(LOG_MIN_HZ), maxallowed=np.log10(nyquist_hz))
     if scale == "log":
         return {**axis, "tickformat": ",d"}
     lo, hi = (int(np.ceil(69 + 12 * np.log2(low_hz / 440.0))), int(np.floor(69 + 12 * np.log2(high_hz / 440.0))))
@@ -216,32 +224,45 @@ def partials_figure(
     frequency_scale: str = "linear",
     min_frequency_hz: float = 0.0,
     weight_by_level: bool = False,
+    time_range_s: tuple[float, float] | None = None,
 ) -> Any:
-    """Partials over a light spectrogram, zoomable, with hover details (see ``partial_traces``)."""
+    """Partials over a light spectrogram, zoomable, with hover details (see ``partial_traces``).
+
+    ``min_frequency_hz``/``max_frequency_hz`` and ``time_range_s`` set the initial view;
+    panning and zooming can reach 0 Hz to Nyquist over the whole signal.
+    """
     go = _go()
     fs = partials.grid.fs
     max_frequency_hz = max_frequency_hz or fs / 2
-    axis = frequency_axis(frequency_scale, min_frequency_hz, max_frequency_hz)
+    axis = frequency_axis(frequency_scale, min_frequency_hz, max_frequency_hz, nyquist_hz=fs / 2)
     fig = go.Figure()
     if audio is not None:
-        fig.add_trace(spectrogram_trace(audio, fs, max_frequency_hz, min_frequency_hz=_axis_low(axis)))
+        # The whole band is drawn so that panning beyond the initial range still shows the spectrogram.
+        fig.add_trace(spectrogram_trace(audio, fs, fs / 2, min_frequency_hz=_allowed_low(axis)))
     for trace in partial_traces(partials, color_by=color_by, selected=selected, weight_by_level=weight_by_level):
         fig.add_trace(trace)
     fig.update_yaxes(**axis)
     fig.update_layout(
-        height=height, margin={"l": 70, "r": 20, "t": 30, "b": 50},
+        height=height, margin={"l": 70, "r": 20, "t": 30, "b": 50}, **_INTERACTION,
         xaxis_title="Time (s)",
-        xaxis={"range": [0, (partials.grid.signal_length or 0) / fs]},
+        xaxis=_time_axis((partials.grid.signal_length or 0) / fs, time_range_s),
         legend={"title": "partial level", "orientation": "h", "y": 1.08},
         plot_bgcolor="white", font={"family": "Latin Modern Roman, CMU Serif, Georgia, serif", "size": 14},
     )
     return fig
 
 
-def _axis_low(axis: dict[str, Any]) -> float:
-    """Lowest frequency an axis from ``frequency_axis`` shows."""
-    low = axis["range"][0]
-    return float(10 ** low) if axis["type"] == "log" else float(low)
+def _allowed_low(axis: dict[str, Any]) -> float:
+    """Lowest frequency an axis from ``frequency_axis`` can be panned or zoomed to."""
+    if axis["type"] == "log":
+        return float(10 ** axis.get("minallowed", axis["range"][0]))
+    return float(axis.get("minallowed", axis["range"][0]))
+
+
+def _time_axis(duration_s: float, view_s: tuple[float, float] | None = None) -> dict[str, Any]:
+    """Time axis showing ``view_s`` (default: everything), limited to the signal's duration."""
+    view = list(view_s) if view_s is not None else [0, duration_s]
+    return {"range": view, "minallowed": 0, "maxallowed": duration_s}
 
 
 def waveform_figure(audio: np.ndarray, resynthesis: np.ndarray, fs: float, height: int = 220) -> Any:
@@ -275,6 +296,7 @@ def overview_figure(
     frequency_scale: str = "linear",
     min_frequency_hz: float = 0.0,
     weight_by_level: bool = False,
+    time_range_s: tuple[float, float] | None = None,
 ) -> Any:
     """Waveforms above the partials, in one figure with a shared time axis.
 
@@ -288,17 +310,17 @@ def overview_figure(
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.25, 0.75], vertical_spacing=0.03)
     for trace in _waveform_traces(audio, resynthesis, fs):
         fig.add_trace(trace, row=1, col=1)
-    axis = frequency_axis(frequency_scale, min_frequency_hz, max_frequency_hz)
-    fig.add_trace(spectrogram_trace(audio, fs, max_frequency_hz, min_frequency_hz=_axis_low(axis)), row=2, col=1)
+    axis = frequency_axis(frequency_scale, min_frequency_hz, max_frequency_hz, nyquist_hz=fs / 2)
+    fig.add_trace(spectrogram_trace(audio, fs, fs / 2, min_frequency_hz=_allowed_low(axis)), row=2, col=1)
     for trace in partial_traces(partials, color_by=color_by, selected=selected, weight_by_level=weight_by_level):
         fig.add_trace(trace, row=2, col=1)
     duration = (partials.grid.signal_length or 0) / fs
-    fig.update_xaxes(range=[0, duration])
+    fig.update_xaxes(**_time_axis(duration, time_range_s))
     fig.update_xaxes(title_text="Time (s)", row=2, col=1)
-    fig.update_yaxes(title_text="Amplitude", row=1, col=1)
+    fig.update_yaxes(title_text="Amplitude", fixedrange=True, row=1, col=1)
     fig.update_yaxes(**axis, row=2, col=1)
     fig.update_layout(
-        height=height, margin={"l": 70, "r": 20, "t": 30, "b": 50}, plot_bgcolor="white",
+        height=height, margin={"l": 70, "r": 20, "t": 30, "b": 50}, plot_bgcolor="white", **_INTERACTION,
         legend={"orientation": "h", "y": 1.04}, font={"family": "Latin Modern Roman, CMU Serif, Georgia, serif", "size": 14},
     )
     return fig

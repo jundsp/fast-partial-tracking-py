@@ -131,7 +131,15 @@ def test_frequency_axes_and_line_weights() -> None:
     fig = figures.overview_figure(partials, x, x, max_frequency_hz=4000, frequency_scale="notes", min_frequency_hz=100)
     assert fig.layout.yaxis2.type == "log"
     heatmap = next(t for t in fig.data if t.type == "heatmap")
-    assert min(heatmap.y) >= 100
+    # The spectrogram covers the whole band, so panning beyond the initial range still shows it.
+    assert min(heatmap.y) >= figures.LOG_MIN_HZ and max(heatmap.y) == pytest.approx(fs / 2, rel=0.01)
+    # Panning and zooming stay within the signal and 0 Hz (20 Hz on log axes) to Nyquist.
+    assert fig.layout.yaxis2.minallowed == pytest.approx(np.log10(figures.LOG_MIN_HZ))
+    assert fig.layout.yaxis2.maxallowed == pytest.approx(np.log10(fs / 2))
+    assert fig.layout.xaxis2.minallowed == 0 and fig.layout.xaxis2.maxallowed == pytest.approx(0.5, abs=0.01)
+    assert fig.layout.yaxis.fixedrange  # waveform panel does not pan vertically
+    linear = figures.partials_figure(partials, x, max_frequency_hz=4000)
+    assert (linear.layout.yaxis.minallowed, linear.layout.yaxis.maxallowed) == (0, fs / 2)
 
     flat = figures.partial_traces(partials)
     weighted = figures.partial_traces(partials, weight_by_level=True)
@@ -148,3 +156,30 @@ def test_max_partials_per_frame_slider() -> None:
     next(s for s in at.sidebar.slider if s.label == "Max partials per frame").set_value(10).run()
     assert not at.exception, at.exception
     assert int(at.metric[1].value) < before
+
+
+def test_view_and_selection_controls() -> None:
+    at = AppTest.from_file(str(APP), default_timeout=120)
+    at.run()
+    x, fs = data.demo_sound()
+    highest = track(x, fs).frequency_hz.max()
+    band = next(s for s in at.slider if s.label == "Frequency range (Hz)")
+    assert band.value[0] == 0 and highest <= band.value[1] < highest + 500
+    assert next(r for r in at.radio if r.label == "Drag on the plot to").options == ["Zoom", "Box", "Lasso", "Pan"]
+    clear = next(b for b in at.button if b.label == "Clear selection")
+    assert clear.disabled
+    next(b for b in at.button if b.label == "Select all").click().run()
+    total = int(at.metric[1].value)
+    assert any(m.value == f"**{total} of {total} partials selected**" for m in at.markdown)
+    next(b for b in at.button if b.label == "Clear selection").click().run()
+    assert any(m.value == "**No partials selected**" for m in at.markdown)
+    next(s for s in at.slider if s.label == "Time range (s)").set_value((0.1, 0.3)).run()
+    assert not at.exception, at.exception
+
+
+def test_time_view_range() -> None:
+    x, fs = data.synthetic("chord", duration=0.5)
+    partials = track(x, fs, AnalysisConfig(window_length=511))
+    fig = figures.overview_figure(partials, x, x, time_range_s=(0.1, 0.3))
+    assert list(fig.layout.xaxis2.range) == [0.1, 0.3]
+    assert fig.layout.xaxis2.maxallowed == pytest.approx(0.5, abs=0.01)

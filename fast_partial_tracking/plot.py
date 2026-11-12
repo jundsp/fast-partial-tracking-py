@@ -34,32 +34,34 @@ def spectrogram(
     audio: np.ndarray,
     fs: float,
     ax: Axes | None = None,
-    n_fft: int = 2048,
+    n_fft: int | None = None,
     hop: int | None = None,
     floor_db: float = 90.0,
     cmap: str = "gray_r",
 ) -> Axes:
-    """Draws a log-magnitude spectrogram.
+    """Draws a log-magnitude spectrogram (edges zero-padded so it spans the whole signal).
 
     Args:
         audio: Mono signal.
         fs: Sampling rate in Hz.
         ax: Axes to draw on (new figure if None).
-        n_fft: Window and DFT length.
-        hop: Hop size (default n_fft // 4).
+        n_fft: Window and DFT length (default: about 23 ms, a power of two).
+        hop: Hop size (default n_fft // 8).
         floor_db: Dynamic range below the maximum that is shown.
         cmap: Colormap.
 
     Returns:
         The axes.
     """
-    from scipy.signal import spectrogram as stft_power
+    from scipy.signal import stft
 
     ax = ax or _pyplot().subplots(figsize=(8, 4))[1]
-    hop = hop or n_fft // 4
-    freqs, times, power = stft_power(audio, fs, window="hann", nperseg=n_fft, noverlap=n_fft - hop, mode="magnitude")
-    level = 20 * np.log10(power + 1e-12)
-    ax.pcolormesh(times, freqs, level, shading="auto", cmap=cmap, vmin=level.max() - floor_db, vmax=level.max())
+    n_fft = n_fft or int(2 ** np.round(np.log2(0.023 * fs)))
+    hop = hop or n_fft // 8
+    freqs, times, spectrum = stft(audio, fs, window="hann", nperseg=n_fft, noverlap=n_fft - hop, boundary="zeros")
+    level = 20 * np.log10(np.abs(spectrum) + 1e-12)
+    ax.pcolormesh(times, freqs, level, shading="auto", cmap=cmap, vmin=level.max() - floor_db, vmax=level.max(),
+                  rasterized=True)
     ax.set_xlabel("time (s)")
     ax.set_ylabel("frequency (Hz)")
     return ax
@@ -99,7 +101,7 @@ def partials(
     if ax is None:
         ax = plt.subplots(figsize=(8, 4))[1]
     if audio is not None:
-        spectrogram(audio, fs, ax=ax, n_fft=min(2048, partials.grid.n_dft))
+        spectrogram(audio, fs, ax=ax)
     segments, values = _segments(partials, color_by)
     collection = LineCollection(segments, linewidths=linewidth, cmap=cmap)
     if color_by == "none":

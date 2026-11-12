@@ -1,136 +1,216 @@
 # fast-partial-tracking
 
-Python implementation of **fast partial tracking**: J. Neri and P. Depalle, [*Fast Partial Tracking of Audio with Real-Time Capability through Linear Programming*](https://www.dafx.de/paper-archive/2018/papers/DAFx2018_paper_26.pdf), DAFx-18.
+Sinusoidal partial tracking for audio, in Python, implementing J. Neri and P. Depalle,
+[*Fast Partial Tracking of Audio with Real-Time Capability through Linear Programming*](https://www.dafx.de/paper-archive/2018/papers/DAFx2018_paper_26.pdf)
+(DAFx-18).
 
-Sinusoidal parameters are estimated per frame with the Distribution Derivative Method,
-peaks are linked across frames by solving a linear assignment problem, and the result
-can be resynthesized or exported. It produces the same output as the original
-[MATLAB code](https://github.com/jundsp/Fast-Partial-Tracking), checked by tests against
-reference data exported from MATLAB.
+Each analysis frame is modelled as a sum of generalized sinusoids, estimated with the
+Distribution Derivative Method. Peaks in consecutive frames are linked by solving a
+linear assignment problem, which gives partials (sinusoidal trajectories) that can be
+resynthesized, edited, plotted or exported. The package includes:
+- a streaming tracker that runs faster than real time
+- a toolkit for editing partials (pruning, selection, pitch shift, time stretch)
+- modern file formats (Parquet, Arrow) plus SDIF
+- an interactive web app
+
+A preset reproduces the original [MATLAB code](https://github.com/jundsp/Fast-Partial-Tracking)
+exactly, and tests check this against reference data exported from MATLAB.
+
+![Partials of a voice recording drawn over its spectrogram](docs/assets/demo_partials.png)
 
 ## Install
 
 ```sh
-pip install fast-partial-tracking            # library + `fpt` command
-pip install "fast-partial-tracking[plot]"    # + matplotlib for the examples
+pip install fast-partial-tracking               # core + `fpt` command
+pip install "fast-partial-tracking[ui]"         # + web app (streamlit, plotly)
+pip install "fast-partial-tracking[plot,fast]"  # + matplotlib plots, numexpr speed-up
 ```
+
+| extra | adds |
+|---|---|
+| `plot` | matplotlib plotting (`fpt.plot`, `Partials.plot()`, `fpt plot`) |
+| `ui` | the web app (`fpt ui`) |
+| `fast` | numexpr for the DDM's hot loop (about 1.7× faster single-threaded) |
+| `dataframes` | `Partials.to_polars()` / `to_pandas()` |
+| `live` | sounddevice, for `examples/live_microphone.py` |
 
 ## Quick start
 
 ```python
-import soundfile as sf
 import fast_partial_tracking as fpt
 
-x, fs = sf.read("examples/audio/demo_sound.wav")
-analysis = fpt.AnalysisConfig(window_length=2047, oversample=2, peak_threshold_db=-50, order=2)
-tracking = fpt.TrackingConfig(delta=0.2, zeta_f=50, zeta_a=15)
-
-partials = fpt.track(x, fs, analysis, tracking)
+x, fs = fpt.data.demo_sound()          # or soundfile.read("your.wav")
+partials = fpt.track(x, fs)            # Partials(1131 partials, 86 frames, ...)
 y = fpt.synthesize(partials)
-print(f"R-SNR = {fpt.rsnr(x, y):.2f} dB")        # 22.34 dB, same as MATLAB jun_demo
+fpt.rsnr(x, y)                         # 22.5 dB reconstruction SNR (eq. 18)
 
-partials.save("demo.parquet")                     # or .arrows / .sdif / .bin
-partials.frequency_hz, partials.amplitude, partials.track_id   # flat columns
+partials.plot(audio=x)                 # partials over the spectrogram
+partials.save("voice.parquet")         # or .arrows / .sdif / .bin
 ```
 
-### Streaming / real time
+## Web app
 
-Linking only needs frames k-1 and k (Section 3.7 of the paper), so audio can be processed
-in blocks of any size with bounded memory. Each frame is emitted one frame after it is
-analyzed:
+```sh
+fpt ui                 # demo voice and synthetic test signals
+fpt ui your.wav        # open a file
+```
+
+- **Settings:** tune the window, hop, Q, threshold, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
+- **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level.
+- **Listen:** play the original, the resynthesis and the residual, or solo a frequency band or chosen partials.
+- **Transform:** pitch shift, time stretch or change the gain and hear the result immediately.
+- **Export:** download Parquet, SDIF, WAV, or the settings as JSON for use with `fpt analyze --config`.
+
+## Working with partials
 
 ```python
-tracker = fpt.PartialTracker(fs, analysis, tracking)
+p = fpt.track(x, fs)
+p.prune(min_frames=3)                                   # drop short, mostly spurious partials
+p.select(time_s=(0.1, 0.3), frequency_hz=(100, 4000), min_amplitude_db=-60)
+p.filter_tracks(lambda t: t.mean_frequency_hz < 1000)  # keep whole partials by a rule
+for t in p.tracks():                                    # Track: id, time_s, frequency_hz, amplitude, ...
+    print(t)                                            # Track(id=639, 39 frames, 0.231-0.451 s, 445.5 Hz, peak -11.0 dB)
+p.stats(); p.to_polars()                                # summary numbers / long table
+
+higher = fpt.transforms.pitch_shift(p, semitones=5)
+slower = fpt.transforms.time_stretch(p, 1.5)
+fpt.synthesize(slower)   # transformed results automatically use phase-integrating synthesis
+```
+
+The point-by-point columns (`frequency_hz`, `amplitude`, `amplitude_db`, `phase`, `time_s`,
+`track_id`) are all NumPy arrays. `alpha` holds the full short-term model of each point
+(eq. 4), including frequency and amplitude slopes.
+
+## Streaming and real time
+
+Linking only needs the previous and current frame (Section 3.7 of the paper), so audio can
+be pushed in blocks of any size. Each frame is final one frame after it was analysed, and
+memory use stays constant however long the stream runs.
+
+```python
+analysis = fpt.AnalysisConfig(threshold_db=-75, threshold_reference="full_scale")  # causal threshold
+tracker = fpt.PartialTracker(fs, analysis)
 synth = fpt.Synthesizer(tracker.grid)
 with fpt.io.open_writer("live.arrows", tracker.grid, order=2) as writer:
-    for block in audio_blocks:
-        for frame in tracker.push(block):
-            writer.write_frame(frame)
-            play(synth.push(frame))
-    for frame in tracker.flush():
+    for frame in tracker.process(audio_blocks):     # any iterable of numpy blocks
         writer.write_frame(frame)
+        play(synth.push(frame))
     writer.set_summary(tracker.grid, tracker.num_tracks)
 ```
 
-`fpt.track` uses the loudest frame of the whole signal as the peak-threshold reference,
-like MATLAB. A live `PartialTracker` can't look ahead, so by default its threshold is
-relative to a full-scale sinusoid (or pass `threshold_db`).
+## Settings
 
-## File formats
+`AnalysisConfig` (Section 3.2) validates every value and never silently changes one.
 
-All formats use the same table, one row per partial per frame, and are written
-incrementally (frame by frame), so long or live analyses never need to fit in memory.
+| field | default | meaning |
+|---|---|---|
+| `window_length` | 2047 | N in samples (`AnalysisConfig.from_duration(fs, window_ms=46)` sets it from a duration) |
+| `hop_size` | N/8 (Blackman-Harris), N/4 (Hann) | H |
+| `n_fft` | next power of 2 ≥ 2N | DFT size |
+| `window` | `"blackman_harris"` | or `"hann"` |
+| `poly_order` | 2 | Q of the short-term model (eq. 4). 1 = frequency and amplitude slope; 2 adds their curvature |
+| `threshold_db` | -60 | peaks below the reference by more than this are ignored |
+| `threshold_reference` | `"signal"` | the loudest frame of the input, `"full_scale"` (a sine of amplitude 1), or a dB value |
+| `geometry` | `"centered"` | frame k is centred on sample k·H |
 
-| extension  | format              | notes |
-|------------|---------------------|-------|
-| `.parquet` | Apache Parquet      | Recommended. Columnar and zstd-compressed, one row group per block of frames. Reads directly into pandas, polars, DuckDB and MATLAB (`parquetread`). |
-| `.arrows`  | Arrow IPC stream    | For live pipelines: readable while it is being written (`fpt.io.iter_arrow_stream`). |
-| `.sdif`    | SDIF `1TRC`, binary | For SDIF tools (AudioSculpt, OpenMusic). Written directly, so `tosdif` isn't needed. |
-| `.bin`     | MATLAB demo format  | Byte-compatible with `jun_write_partials.m` / `jun_read_partials.m`. |
-
-Columns: `frame`, `time_s`, `track_id`, `frequency_hz`, `amplitude` (linear amplitude of
-the real sinusoid), `phase`, and optionally `alpha_re`/`alpha_im`. The last two hold the
-Q + 1 complex coefficients of the short-term model (eq. 4), which give exact frequency
-and amplitude slopes. Analysis settings and the frame grid are stored as JSON metadata.
-
-```python
-import polars as pl
-df = pl.read_parquet("demo.parquet")
-df.group_by("track_id").agg(pl.col("frequency_hz").mean(), pl.len())
-```
+`TrackingConfig` (Sections 3.3–3.4):
+- **`delta`** (δ, default 0.2): the preference for continuing partials over spurious links.
+- **`zeta_f_hz`** (ζ_f, default 50) and **`zeta_a_db`** (ζ_a, default 15): the frequency and level differences at which a link switches from useful to spurious (eqs. 12–13).
 
 ## Command line
 
 ```sh
-fpt analyze input.wav -o partials.parquet --report      # R-SNR of the resynthesis
-fpt analyze long.wav -o partials.arrows --stream        # block by block, bounded memory
-fpt convert partials.parquet -o partials.sdif
+fpt analyze in.wav -o partials.parquet --report        # prints R-SNR
+fpt analyze long.wav -o partials.arrows --stream       # block by block, constant memory
+fpt analyze in.wav -o p.parquet --preset matlab        # exact MATLAB jun_demo settings
+fpt analyze in.wav -o p.parquet --config settings.json --prune 3
 fpt synth partials.parquet -o resynthesis.wav
-fpt info partials.parquet
+fpt convert partials.parquet -o partials.sdif
+fpt plot partials.parquet -o partials.png --audio in.wav
+fpt info partials.parquet                              # summary + partial-length histogram
+fpt ui in.wav
 ```
+
+## File formats
+
+All formats share one table, with one row per partial per frame, and are written frame by
+frame, so neither long nor live analyses need to fit in memory.
+
+| extension | format | use |
+|---|---|---|
+| `.parquet` | Apache Parquet | Recommended. Columnar and zstd-compressed. Opens directly in pandas, polars, DuckDB and MATLAB (`parquetread`). |
+| `.arrows` | Arrow IPC stream | Live pipelines: can be read while it's still being written (`fpt.io.iter_arrow_stream`). |
+| `.sdif` | SDIF `1TRC`, binary | SDIF tools such as AudioSculpt and OpenMusic. Written directly; checked with IRCAM's SDIF library. |
+| `.bin` | MATLAB demo format | Byte-compatible with `jun_write_partials.m` / `jun_read_partials.m`. |
+
+Columns: `frame`, `time_s`, `track_id`, `frequency_hz`, `amplitude` (the real sinusoid's
+amplitude), `phase`, and optionally `alpha_re`/`alpha_im`. The settings and frame grid
+are stored as JSON metadata (format version 2; version 1 files from 0.1 still read).
+
+## Performance
+
+Tracking 10 s of 44.1 kHz audio (window N = 2047) on a 10-core laptop:
+- **`fpt.track` (all cores):** about 0.9 s, roughly 10× faster than real time.
+- **Single thread with numexpr:** 1.2 s.
+
+`examples/benchmark.py` measures this on your machine.
+
+## Relation to the MATLAB code
+
+`AnalysisConfig.matlab(...)` and `TrackingConfig.matlab(...)` reproduce
+`jun_track_partials.m`. On eight reference signals (Hann and Blackman-Harris windows,
+Q = 1–3, odd and even N), the tests check every stage against data exported from MATLAB
+(`matlab/export_reference.m`): spectra, peaks, DDM coefficients, costs, assignments,
+partial labels, and resynthesis to about 1e-14.
+
+The default settings deliberately differ in two ways:
+- **Frame placement:** the model origin is the window centre, where MATLAB's is one sample off. Quality is unchanged (+0.02 dB mean R-SNR).
+- **Amplitude check:** the default rejects estimates whose amplitude at the frame centre is impossibly large. MATLAB's check compares a log value with a linear bound and almost never triggers. Q = 3 models gain up to +10 dB; Q = 2 is unchanged or better.
+
+Both repositories carry the fixes for the two places where the MATLAB code differed from
+the paper (eqs. 10–13).
 
 ## Where the paper lives in the code
 
-| paper | module |
+| paper | code |
 |---|---|
-| Eq. 1–2, sinusoidal model | `partials.py` (`amplitude = 2·exp(a)`), `synthesis.py` |
-| Eq. 3, assignment problem; §2.2 Hungarian algorithm | `assignment.py` (`scipy.optimize.linear_sum_assignment`) |
-| Eq. 4–7, short-term model; DDM estimation [Betser 2009] | `model.py`, `ddm.py`, `windows.py`, `peaks.py` |
-| Eq. 8–11, useful/spurious costs at the frame midpoint | `cost.py` |
-| Eq. 12–13, σ from ζ and δ | `cost.py::cost_variances` |
-| Eq. 14, cost matrix; §3.5 useful assignments | `cost.py`, `assignment.py` |
-| §3.6, partial labeling | `labeling.py` |
-| §3.7, frame-by-frame (real-time) operation | `tracker.py::PartialTracker` |
-| Eq. 18, R-SNR; McAulay–Quatieri synthesis [12] | `metrics.py`, `synthesis.py` |
-
-## MATLAB equivalence
-
-`tests/fixtures/matlab/` holds reference outputs exported by
-[`matlab/export_reference.m`](matlab/export_reference.m) from the MATLAB repository:
-
-- **Signals:** the demo sound, a sine, harmonic chirps, vibrato, crossing chirps, tone bursts and noise.
-- **Settings:** Hann and Blackman-Harris windows, Q = 1–3, and odd and even window lengths.
-
-The tests check that the frame grids, windows, spectra, peaks, DDM coefficients, cost
-matrices, assignments, track labels, partial parameters (to about 1e-12) and
-resynthesized signals (to about 1e-14) all agree.
-
-```sh
-uv sync --extra dev
-uv run pytest                    # uses the committed references
-uv run pytest --matlab           # regenerates them first (needs MATLAB; set FPT_MATLAB_DIR)
-uv run python examples/matlab_comparison_report.py   # plots + CSV per case
-```
-
-The SDIF output was also verified with IRCAM's SDIF library through `pysdif3` 1.0.0.
-`pysdif3` 1.0.1 cannot open files, so that test skips unless 1.0.0 is installed with
-numpy < 2.
+| eqs. 1–2, sinusoidal model | `partials.py` (`amplitude = 2·exp(a)`), `synthesis/` |
+| eq. 3 and §2.2, assignment problem and Hungarian algorithm | `tracking/assignment.py` |
+| eqs. 4–7, short-term model and its DDM estimation (Betser 2009) | `analysis/model.py`, `analysis/ddm.py` |
+| eqs. 8–11, useful and spurious costs at the frame midpoint | `tracking/cost.py` |
+| eqs. 12–13, σ from ζ and δ | `tracking/cost.py::cost_variances` |
+| eq. 14 and §3.5, cost matrix and useful assignments | `tracking/cost.py`, `tracking/assignment.py` |
+| §3.6, partial labeling | `tracking/labeling.py` |
+| §3.7, frame-by-frame (real-time) operation | `tracking/tracker.py::PartialTracker` |
+| eq. 18, R-SNR | `metrics.py` |
+| McAulay–Quatieri synthesis [12] | `synthesis/mcaulay_quatieri.py` |
 
 ## Examples
 
-`examples/track_demo.py` (the `jun_demo.m` port), `streaming_demo.py`, `sdif_export.py`
-and `matlab_comparison_report.py`. Outputs go to
-`~/Documents/output/fast-partial-tracking/examples/<name>/` (override with `--out`).
+| script | shows |
+|---|---|
+| `quickstart.py` | track, resynthesize, R-SNR and plot |
+| `track_demo.py` | port of MATLAB `jun_demo.m` (MATLAB preset) |
+| `harmonic_residual.py` | split a sound into its sinusoidal part and noise residual |
+| `pitch_shift_time_stretch.py` | transforms with phase-integrating synthesis |
+| `polyphonic.py` | a chord and crossing chirps, each partial in its own colour |
+| `parameter_sweep.py` | R-SNR vs δ, ζ_f and Q; default vs MATLAB frame placement |
+| `streaming_demo.py` | block streaming to an Arrow file with live resynthesis; memory plot |
+| `live_microphone.py` | real-time microphone tracking with a live plot (`--simulate` without a mic) |
+| `formats.py` | Parquet/Arrow/SDIF round trips; querying with polars |
+| `benchmark.py` | speed per stage and thread count |
+| `matlab_comparison_report.py` | Python vs MATLAB, per test case |
+
+Outputs go to `~/Documents/output/fast-partial-tracking/examples/<name>/` (override with `--out`).
+
+## Development
+
+```sh
+uv sync --extra dev
+uv run pytest                     # unit, MATLAB equivalence, UI and example tests
+uv run pytest -m "not examples"   # skip running the example scripts
+uv run pytest --matlab            # re-export the MATLAB references first (needs MATLAB)
+```
 
 ## Citation
 

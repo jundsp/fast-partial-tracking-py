@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import sys
@@ -113,13 +114,91 @@ def file_bytes(partials: fpt.Partials, suffix: str) -> bytes:
         return path.read_bytes()
 
 
-def overview_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int) -> None:
+SELECT_MODES = {"Replace": "replace", "Add": "add", "Remove": "remove"}
+
+
+def selection_state(signature: str, num_tracks: int) -> np.ndarray:
+    """The selected partial labels, reset whenever the analysis result changes."""
+    if st.session_state.get("selection_for") != signature:
+        st.session_state.selection_for = signature
+        st.session_state.selection = np.zeros(0, dtype=np.int64)
+        st.session_state.last_plot_event = None
+    selection = st.session_state.selection
+    return selection[selection < num_tracks]
+
+
+def apply_selection(ids: np.ndarray, mode: str) -> None:
+    """Combines new labels with the current selection (replace, add or remove)."""
+    current = st.session_state.selection
+    ids = np.asarray(ids, dtype=np.int64)
+    if mode == "add":
+        ids = np.union1d(current, ids)
+    elif mode == "remove":
+        ids = np.setdiff1d(current, ids)
+    st.session_state.selection = np.unique(ids)
+
+
+def selection_tools(partials: fpt.Partials, summary: fpt.selection.TrackSummary, fs: int) -> str:
+    """Selection controls above the plot; returns the mode for selections made on the plot."""
+    mode = SELECT_MODES[st.radio("Plot selection", list(SELECT_MODES), horizontal=True,
+                                 help="Click a partial, or drag a box or lasso on the plot (pick the tool in the "
+                                      "plot's toolbar). Double-click the plot to clear the box.")]
+    duration = (partials.grid.signal_length or 0) / fs
+    rules, harmonic, actions = st.columns([2, 2, 1])
+    with rules.popover("Select by rule", width="stretch"), st.form("rule_select", border=False):
+        time_range = st.slider("Overlaps time (s)", 0.0, max(duration, 0.01), (0.0, max(duration, 0.01)), 0.01)
+        band = st.slider("Mean frequency (Hz)", 0, fs // 2, (0, fs // 2), 10)
+        level = st.slider("Peak level at least (dB)", -120, 0, -120)
+        length = st.slider("Length at least (frames)", 1, 50, 1)
+        if st.form_submit_button("Select"):
+            apply_selection(fpt.selection.by_rule(partials, time_s=time_range, frequency_hz=band, min_level_db=level,
+                                                  min_frames=length, summary=summary), mode)
+    with harmonic.popover("Select harmonics", width="stretch"), st.form("harmonic_select", border=False):
+        f0 = st.number_input("Fundamental (Hz)", 20.0, fs / 2, 220.0, 1.0)
+        cents = st.slider("Tolerance (cents)", 5, 100, 40, 5)
+        count = st.slider("Highest harmonic", 1, 100, 30)
+        time_range = st.slider("Overlaps time (s)", 0.0, max(duration, 0.01), (0.0, max(duration, 0.01)), 0.01,
+                               key="harmonic_time")
+        if st.form_submit_button("Select"):
+            apply_selection(fpt.selection.harmonics(partials, f0, cents, count, time_s=time_range, summary=summary),
+                            mode)
+    with actions.popover("Select...", width="stretch"):
+        if st.button("All", width="stretch"):
+            apply_selection(summary.id[summary.frames > 0], "replace")
+        if st.button("Invert", width="stretch"):
+            apply_selection(np.setdiff1d(summary.id[summary.frames > 0], st.session_state.selection), "replace")
+        if st.button("None", width="stretch"):
+            apply_selection(np.zeros(0, dtype=np.int64), "replace")
+    return mode
+
+
+def plot_selection(figure: Any, event: Any, mode: str) -> bool:
+    """Applies a new selection made on the plot; returns True if the selection changed."""
+    points = list(getattr(getattr(event, "selection", None), "points", None) or [])
+    key = tuple((p.get("curve_number"), p.get("point_index", p.get("point_number"))) for p in points)
+    if not points or key == st.session_state.get("last_plot_event"):
+        return False
+    st.session_state.last_plot_event = key
+    apply_selection(figures.track_ids_from_points(figure, points), mode)
+    return True
+
+
+def overview_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int, signature: str) -> None:
+    summary = fpt.selection.summarize(partials)
+    selection_state(signature, partials.num_tracks)
+    mode = selection_tools(partials, summary, fs)
     left, right = st.columns([3, 1])
     max_freq = left.slider("Max frequency (Hz)", 500, fs // 2, min(5000, fs // 2), 100)
     color_by = right.radio("Color", ["track", "amplitude"], horizontal=True,
                            format_func=lambda c: "by partial" if c == "track" else "by level")
-    figure = figures.overview_figure(partials, x, y, max_frequency_hz=max_freq, color_by=color_by)
-    st.plotly_chart(figure, use_container_width=True)
+    selected = st.session_state.selection
+    figure = figures.overview_figure(partials, x, y, max_frequency_hz=max_freq, color_by=color_by, selected=selected)
+    event = st.plotly_chart(figure, width="stretch", on_select="rerun",
+                            selection_mode=("points", "box", "lasso"), key="partials_plot")
+    if plot_selection(figure, event, mode):
+        st.rerun()
+    st.caption(f"{len(selected)} of {partials.num_tracks} partials selected" if len(selected)
+               else "No partials selected: click, box or lasso partials on the plot, or use the tools above.")
 
 
 def listen_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int) -> None:
@@ -149,13 +228,13 @@ def transform_tab(partials: fpt.Partials, fs: int) -> None:
         changed = fpt.transforms.time_stretch(changed, stretch)
     st.audio(wav_bytes(fpt.synthesize(changed, phase="integrated"), fs), format="audio/wav")
     st.plotly_chart(figures.partials_figure(changed, max_frequency_hz=min(8000, fs // 2), height=380),
-                    use_container_width=True)
+                    width="stretch")
 
 
 def details_tab(partials: fpt.Partials) -> None:
     st.code("\n".join(describe(partials)), language=None)
-    st.plotly_chart(figures.length_histogram(partials), use_container_width=True)
-    st.dataframe(partials.to_pandas().head(500), use_container_width=True, hide_index=True)
+    st.plotly_chart(figures.length_histogram(partials), width="stretch")
+    st.dataframe(partials.to_pandas().head(500), width="stretch", hide_index=True)
 
 
 def export_tab(partials: fpt.Partials, y: np.ndarray, fs: int, name: str, analysis: fpt.AnalysisConfig,
@@ -180,6 +259,7 @@ def main() -> None:
     x, fs, name = source
     analysis, tracking, prune = settings(fs)
     partials, y, elapsed = analyze(x, fs, analysis.to_dict(), tracking.to_dict(), prune)
+    signature = json.dumps([name, hashlib.blake2b(x.tobytes(), digest_size=8).hexdigest(), analysis.to_dict(), tracking.to_dict(), prune], default=str)
 
     metrics = st.columns(4)
     metrics[0].metric("R-SNR", f"{fpt.rsnr(x, y):.2f} dB")
@@ -189,7 +269,7 @@ def main() -> None:
 
     tabs = st.tabs(["Partials", "Listen", "Transform", "Details", "Export"])
     with tabs[0]:
-        overview_tab(partials, x, y, fs)
+        overview_tab(partials, x, y, fs, signature)
     with tabs[1]:
         listen_tab(partials, x, y, fs)
     with tabs[2]:

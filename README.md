@@ -80,6 +80,7 @@ sidebar.
 
 - **Settings:** tune the window, hop, Q, threshold, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
 - **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level.
+- **Select:** click partials, or drag a box or lasso over them, to replace, add to or remove from the selection. You can also select by rule (time, frequency, level, length) or select the harmonics of a fundamental. Unselected partials are drawn in grey.
 - **Listen:** play the original, the resynthesis and the residual, or solo a frequency band or chosen partials.
 - **Transform:** pitch shift, time stretch or change the gain and hear the result immediately.
 - **Export:** download Parquet, SDIF, WAV, or the settings as JSON for use with `fpt analyze --config`.
@@ -91,6 +92,9 @@ p = fpt.track(x, fs)
 p.prune(min_frames=3)                                   # drop short, mostly spurious partials
 p.select(time_s=(0.1, 0.3), frequency_hz=(100, 4000), min_amplitude_db=-60)
 p.filter_tracks(lambda t: t.mean_frequency_hz < 1000)  # keep whole partials by a rule
+ids = fpt.selection.harmonics(p, f0_hz=220, tolerance_cents=40)  # labels of 220 Hz harmonics
+p.select(track_ids=ids)
+fpt.selection.summarize(p)                              # start, end, length, mean Hz, peak dB per partial
 for t in p.tracks():                                    # Track: id, time_s, frequency_hz, amplitude, ...
     print(t)                                            # Track(id=639, 39 frames, 0.231-0.451 s, 445.5 Hz, peak -11.0 dB)
 p.stats(); p.to_polars()                                # summary numbers / long table

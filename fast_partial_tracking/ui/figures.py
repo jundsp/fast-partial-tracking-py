@@ -11,6 +11,7 @@ from fast_partial_tracking.plot import PALETTE
 
 _MAX_COLUMNS = 700
 _AMPLITUDE_BANDS = 6
+_UNSELECTED = "rgba(40, 40, 40, 0.35)"
 
 
 def _go() -> Any:
@@ -47,7 +48,11 @@ def spectrogram_trace(audio: np.ndarray, fs: float, max_frequency_hz: float, flo
 
 
 def partial_traces(
-    partials: Partials, color_by: str = "track", dynamic_range_db: float = 80.0, colorscale: str = "Plasma"
+    partials: Partials,
+    color_by: str = "track",
+    dynamic_range_db: float = 80.0,
+    colorscale: str = "Plasma",
+    selected: np.ndarray | None = None,
 ) -> list[Any]:
     """Line traces of all partials, one WebGL trace per color.
 
@@ -55,33 +60,83 @@ def partial_traces(
     trace. ``color_by="track"`` cycles the saturated palette of ``fpt.plot`` so neighbouring
     partials differ; ``"amplitude"`` groups partials into level bands. Hovering shows the
     partial label, frequency and level.
+
+    Each point also carries an invisible marker, so box and lasso selection pick up the
+    lines; ``track_ids_from_points`` turns such a selection back into partial labels.
+
+    Args:
+        partials: The partials to draw.
+        color_by: ``"track"`` or ``"amplitude"``.
+        dynamic_range_db: Level range spanned by the amplitude bands.
+        colorscale: Plotly colorscale of the amplitude bands.
+        selected: Labels of selected partials. When given and not empty, the other
+            partials are drawn thin and grey behind the selected ones.
     """
     if len(partials) == 0:
         return []
     order = np.lexsort((partials.frame, partials.track_id))
+    n = max(partials.num_tracks, 1)
+    is_selected = np.ones(n, dtype=bool)
+    traces = []
+    if selected is not None and len(selected):
+        is_selected = np.zeros(n, dtype=bool)
+        is_selected[np.asarray(selected, dtype=np.int64)] = True
+        background = np.where(is_selected, -1, 0)
+        if not is_selected.all():
+            traces.append(_trace(partials, order, background, 0, _UNSELECTED, "not selected", width=1.0))
     if color_by == "track":
-        group = np.arange(max(partials.num_tracks, 1)) % len(PALETTE)
-        return [_trace(partials, order, group, g, PALETTE[g], None) for g in range(len(PALETTE))
-                if np.any(group[partials.track_id] == g)]
+        group = np.where(is_selected, np.arange(n) % len(PALETTE), -1)
+        return traces + [_trace(partials, order, group, g, PALETTE[g], None) for g in range(len(PALETTE))
+                         if np.any(group[partials.track_id] == g)]
     from plotly.colors import sample_colorscale
 
     level = partials.amplitude_db
     top = level.max()
-    track_level = np.full(max(partials.num_tracks, 1), -np.inf)
+    track_level = np.full(n, -np.inf)
     np.maximum.at(track_level, partials.track_id, level)
     edges = np.linspace(top - dynamic_range_db, top, _AMPLITUDE_BANDS + 1)
     group = np.clip(np.digitize(track_level, edges) - 1, 0, _AMPLITUDE_BANDS - 1)
+    group = np.where(is_selected, group, -1)
     colors = sample_colorscale(colorscale, np.linspace(0.1, 0.95, _AMPLITUDE_BANDS))
-    return [_trace(partials, order, group, b, colors[b], f"{edges[b]:.0f} to {edges[b + 1]:.0f} dB")
-            for b in range(_AMPLITUDE_BANDS) if np.any(group[partials.track_id] == b)]
+    return traces + [_trace(partials, order, group, b, colors[b], f"{edges[b]:.0f} to {edges[b + 1]:.0f} dB")
+                     for b in range(_AMPLITUDE_BANDS) if np.any(group[partials.track_id] == b)]
 
 
-def _trace(partials: Partials, order: np.ndarray, group: np.ndarray, value: int, color: str, name: str | None) -> Any:
+def track_ids_from_points(figure: Any, points: list[dict[str, Any]]) -> np.ndarray:
+    """Partial labels of selected points, as reported by a Plotly selection event.
+
+    Args:
+        figure: The figure the selection was made on.
+        points: Selected points, each with ``curve_number`` and ``point_index`` (the
+            ``selection.points`` list of ``st.plotly_chart(on_select=...)``).
+
+    Returns:
+        Sorted unique labels; points on non-partial traces are ignored.
+    """
+    ids = set()
+    for point in points:
+        trace = figure.data[point["curve_number"]]
+        meta = trace.meta or {}
+        index = point.get("point_index", point.get("point_number"))
+        if not meta.get("partials") or index is None:
+            continue
+        value = trace.customdata[index][0]
+        if np.isfinite(value):
+            ids.add(int(value))
+    return np.array(sorted(ids), dtype=np.int64)
+
+
+def _trace(
+    partials: Partials, order: np.ndarray, group: np.ndarray, value: int, color: str, name: str | None,
+    width: float = 2.0,
+) -> Any:
     """One polyline trace for the partials whose group equals ``value``."""
     rows = order[group[partials.track_id[order]] == value]
     x, y, custom = _polylines(partials, rows)
     return _go().Scattergl(
-        x=x, y=y, customdata=custom, mode="lines", line={"color": color, "width": 2},
+        x=x, y=y, customdata=custom, mode="lines+markers", line={"color": color, "width": width},
+        marker={"size": 6, "opacity": 0, "color": color}, meta={"partials": True},
+        selected={"marker": {"opacity": 0}}, unselected={"marker": {"opacity": 0}},
         name=name or "", showlegend=name is not None,
         hovertemplate="partial %{customdata[0]}<br>%{x:.3f} s<br>%{y:.1f} Hz<br>%{customdata[1]:.1f} dB<extra></extra>",
     )
@@ -103,15 +158,16 @@ def partials_figure(
     max_frequency_hz: float | None = None,
     height: int = 520,
     color_by: str = "track",
+    selected: np.ndarray | None = None,
 ) -> Any:
-    """Partials over a light spectrogram, zoomable, with hover details."""
+    """Partials over a light spectrogram, zoomable, with hover details (see ``partial_traces``)."""
     go = _go()
     fs = partials.grid.fs
     max_frequency_hz = max_frequency_hz or fs / 2
     fig = go.Figure()
     if audio is not None:
         fig.add_trace(spectrogram_trace(audio, fs, max_frequency_hz))
-    for trace in partial_traces(partials, color_by=color_by):
+    for trace in partial_traces(partials, color_by=color_by, selected=selected):
         fig.add_trace(trace)
     fig.update_layout(
         height=height, margin={"l": 70, "r": 20, "t": 30, "b": 50},
@@ -151,6 +207,7 @@ def overview_figure(
     max_frequency_hz: float | None = None,
     color_by: str = "track",
     height: int = 760,
+    selected: np.ndarray | None = None,
 ) -> Any:
     """Waveforms above the partials, in one figure with a shared time axis.
 
@@ -165,7 +222,7 @@ def overview_figure(
     for trace in _waveform_traces(audio, resynthesis, fs):
         fig.add_trace(trace, row=1, col=1)
     fig.add_trace(spectrogram_trace(audio, fs, max_frequency_hz), row=2, col=1)
-    for trace in partial_traces(partials, color_by=color_by):
+    for trace in partial_traces(partials, color_by=color_by, selected=selected):
         fig.add_trace(trace, row=2, col=1)
     duration = (partials.grid.signal_length or 0) / fs
     fig.update_xaxes(range=[0, duration])

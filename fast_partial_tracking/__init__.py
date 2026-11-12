@@ -17,7 +17,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _version
 
-from fast_partial_tracking import data, io, plot, transforms
+from fast_partial_tracking import data, io, plot, selection, transforms
 from fast_partial_tracking.config import AnalysisConfig, TrackingConfig
 from fast_partial_tracking.framing import FrameGrid
 from fast_partial_tracking.metrics import rsnr
@@ -45,6 +45,7 @@ __all__ = [
     "io",
     "plot",
     "rsnr",
+    "selection",
     "synthesize",
     "synthesize_frames",
     "track",

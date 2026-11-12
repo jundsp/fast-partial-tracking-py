@@ -76,6 +76,8 @@ fpt ui your.wav
 Without a file it opens the demo voice; synthetic test signals and file upload are in the
 sidebar.
 
+![The web app: analysis and tracking settings in the sidebar, R-SNR and timing at the top, and the waveform above the partials drawn over the spectrogram](docs/assets/web_app.png)
+
 - **Settings:** tune the window, hop, Q, threshold, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
 - **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level.
 - **Listen:** play the original, the resynthesis and the residual, or solo a frequency band or chosen partials.

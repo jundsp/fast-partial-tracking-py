@@ -77,7 +77,7 @@ Without a file it opens the demo voice; synthetic test signals and file upload a
 sidebar. It can also open a partials file (`.parquet`, `.arrows`, `.sdif` or `.bin`) without
 any audio, to view, select, play, transform and export it.
 
-![The web app: analysis and tracking settings in the sidebar, R-SNR and timing at the top, and the waveform above the partials drawn over the spectrogram](docs/assets/web_app.png)
+![The web app: settings in the sidebar, selection and display tools at the top, and the waveform above the partials, with a lasso selection of the voice's lower harmonics highlighted and the rest in grey](docs/assets/web_app_selection.png)
 
 - **Settings:** tune the window, hop, Q, threshold, maximum partials per frame, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
 - **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level. The frequency axis can be linear, logarithmic or labelled with note names, and lines can be weighted by level so quiet partials fade out.

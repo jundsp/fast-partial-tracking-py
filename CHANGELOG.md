@@ -22,7 +22,7 @@ app and about 5× faster tracking. Exact MATLAB results remain available through
 ### Changed
 - **Package layout**: organized by processing stage into `analysis/`, `tracking/`, `synthesis/` and `compat/`.
 - **Default frame placement**: centered. Frame k sits on input sample k·H and the model origin is the window centre (MATLAB placement: `geometry="matlab"`).
-- **Default amplitude check**: `amplitude_guard="center"`. It rejects estimates whose amplitude at the frame centre exceeds the largest sample, which keeps Q = 3 models stable. MATLAB's check compares a log value with a linear bound and almost never triggers.
+- **Amplitude check**: `amplitude_guard="center"`. It rejects estimates whose amplitude at the frame centre exceeds the largest sample, which keeps Q = 3 models stable. The MATLAB code was fixed the same way, so the MATLAB preset uses it too; `amplitude_guard="legacy"` reproduces the old check, which compared a log value with a linear bound and almost never triggered.
 - **File format version 2**: the grid records its geometry. Version 1 files are still read.
 - **Speed**: about 5× faster tracking, from a fused exponential in the α₀ estimate, one batched FFT per frame and frame-parallel analysis in `track(workers=...)`.
 

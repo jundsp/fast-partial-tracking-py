@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io as stdio
+from dataclasses import replace
 import json
 from pathlib import Path
 
@@ -152,11 +153,13 @@ def test_unsupported_extension(tmp_path: Path, demo_partials: Partials) -> None:
 def test_reads_version_1_files(suffix: str) -> None:
     """Files written by package 0.1 (MATLAB geometry, old setting names) still load."""
     partials = read(FIXTURES.parent / "v1" / f"vibrato_v1{suffix}")
-    ref = MatlabCase("vibrato", load_mat("vibrato"))
+    case = MatlabCase("vibrato", load_mat("vibrato"))
+    # 0.1 used the legacy amplitude check, so compare with the same analysis today.
+    expected = track(case.x, case.fs, replace(case.analysis, amplitude_guard="legacy"), case.tracking)
     assert partials.grid.geometry == "matlab"
-    np.testing.assert_array_equal(partials.track_id + 1, ref.partials[:, 5])
-    np.testing.assert_allclose(partials.omega, ref.partials[:, 2], atol=1e-10)
-    np.testing.assert_allclose(synthesize(partials), ref["y"], atol=1e-9)
+    np.testing.assert_array_equal(partials.track_id, expected.track_id)
+    np.testing.assert_allclose(partials.omega, expected.omega, atol=1e-10)
+    np.testing.assert_allclose(synthesize(partials), synthesize(expected), atol=1e-9)
 
 
 def test_files_record_format_version(tmp_path: Path, demo_partials: Partials) -> None:

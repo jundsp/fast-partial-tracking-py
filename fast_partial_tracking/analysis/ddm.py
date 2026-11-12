@@ -211,8 +211,9 @@ class DdmEstimator:
         checked because the window vanishes at the edges, where the polynomial is
         unconstrained.
 
-        ``"matlab"``: jun_ddm.m compares the log-amplitude at the edges and centre with
-        twice the largest *linear* sample value, a loose bound kept for exact equivalence.
+        ``"legacy"``: the original jun_ddm.m check, which compares the log-amplitude at the
+        edges and centre with twice the largest *linear* sample value (a loose bound kept
+        for reproducing results of the MATLAB code before the fix).
         """
         with np.errstate(all="ignore"):
             if self.amplitude_guard == "center":

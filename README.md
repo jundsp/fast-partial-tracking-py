@@ -163,12 +163,12 @@ Q = 1–3, odd and even N), the tests check every stage against data exported fr
 (`matlab/export_reference.m`): spectra, peaks, DDM coefficients, costs, assignments,
 partial labels, and resynthesis to about 1e-14.
 
-The default settings deliberately differ in two ways:
-- **Frame placement:** the model origin is the window centre, where MATLAB's is one sample off. Quality is unchanged (+0.02 dB mean R-SNR).
-- **Amplitude check:** the default rejects estimates whose amplitude at the frame centre is impossibly large. MATLAB's check compares a log value with a linear bound and almost never triggers. Q = 3 models gain up to +10 dB; Q = 2 is unchanged or better.
+The default frame placement deliberately differs: the model origin is the window centre,
+where MATLAB's is one sample off. Quality is unchanged (+0.02 dB mean R-SNR).
 
-Both repositories carry the fixes for the two places where the MATLAB code differed from
-the paper (eqs. 10–13).
+Both repositories carry the same fixes:
+- **Paper equations:** the cost variances and frame midpoint now follow eqs. 10–13.
+- **Amplitude check:** estimates whose amplitude at the frame centre is impossibly large are rejected. The original check compared a log value with a linear bound and almost never triggered. Q = 3 models gain up to +10 dB; Q = 2 is unchanged or better. `amplitude_guard="legacy"` reproduces the old check.
 
 ## Where the paper lives in the code
 

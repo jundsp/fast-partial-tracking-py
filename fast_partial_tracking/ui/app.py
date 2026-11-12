@@ -197,8 +197,34 @@ def overview_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int, 
                             selection_mode=("points", "box", "lasso"), key="partials_plot")
     if plot_selection(figure, event, mode):
         st.rerun()
-    st.caption(f"{len(selected)} of {partials.num_tracks} partials selected" if len(selected)
-               else "No partials selected: click, box or lasso partials on the plot, or use the tools above.")
+    if not len(selected):
+        st.caption("No partials selected: click, box or lasso partials on the plot, or use the tools above.")
+        return
+    selection_panel(partials, summary, selected, fs)
+
+
+def selection_panel(partials: fpt.Partials, summary: fpt.selection.TrackSummary, selected: np.ndarray,
+                    fs: int) -> None:
+    """Table, playback and a detail view of the selected partials."""
+    st.subheader(f"Selection: {len(selected)} of {partials.num_tracks} partials")
+    st.audio(wav_bytes(fpt.synthesize(partials.select(track_ids=selected)), fs), format="audio/wav")
+    table = {
+        "partial": selected,
+        "start (s)": summary.start_s[selected].round(3),
+        "end (s)": summary.end_s[selected].round(3),
+        "frames": summary.frames[selected],
+        "mean (Hz)": summary.mean_frequency_hz[selected].round(1),
+        "note": [figures.note_name(f) for f in summary.mean_frequency_hz[selected]],
+        "peak (dB)": summary.peak_db[selected].round(1),
+    }
+    left, right = st.columns([1, 1])
+    left.dataframe(table, hide_index=True, width="stretch", height=min(360, 35 * (len(selected) + 1) + 3))
+    loudest = int(selected[np.argmax(summary.peak_db[selected])])
+    inspect = right.selectbox("Inspect partial", selected.tolist(), index=selected.tolist().index(loudest),
+                              format_func=lambda i: f"#{i}: {summary.mean_frequency_hz[i]:.1f} Hz, "
+                                                    f"{figures.note_name(summary.mean_frequency_hz[i])}, "
+                                                    f"{summary.frames[i]} frames")
+    right.plotly_chart(figures.track_figure(partials.track(inspect)), width="stretch")
 
 
 def listen_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int) -> None:
@@ -206,17 +232,43 @@ def listen_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int) ->
     for column, (label, signal) in zip(columns, [("Original", x), ("Resynthesis", y), ("Residual (noise)", x - y)]):
         column.caption(label)
         column.audio(wav_bytes(signal, fs), format="audio/wav")
-    st.subheader("Solo")
-    band = st.slider("Frequency band (Hz)", 0, fs // 2, (0, fs // 2), 50)
-    loudest = sorted(partials.tracks(), key=lambda t: -t.amplitude_db.max())[:40]
-    labels = {f"#{t.id}: {t.mean_frequency_hz:.0f} Hz, {t.amplitude_db.max():.0f} dB, {len(t)} frames": t.id for t in loudest}
-    picked = st.multiselect("Partials (40 loudest)", list(labels))
-    solo = partials.select(frequency_hz=band, track_ids=[labels[p] for p in picked] if picked else None)
-    st.audio(wav_bytes(fpt.synthesize(solo), fs), format="audio/wav")
-    st.caption(f"{solo.num_tracks} partials in the solo selection")
+    st.subheader("Play partials")
+    selected = st.session_state.get("selection", np.zeros(0, dtype=np.int64))
+    sources = ["Selected partials", "All partials"] if len(selected) else ["All partials"]
+    source = st.radio("Play", sources, horizontal=True)
+    duration = x.size / fs
+    left, middle, right = st.columns([3, 2, 1])
+    start, end = left.slider("From–to (s)", 0.0, duration, (0.0, duration), 0.01, key="play_range")
+    speed = middle.select_slider("Speed", [0.25, 0.5, 0.75, 1.0, 1.5, 2.0], value=1.0,
+                                 format_func=lambda v: f"{v:g}x", help="Changes speed without changing pitch.")
+    loop = right.toggle("Loop")
+    chosen = partials.select(track_ids=selected) if source == "Selected partials" else partials
+    st.audio(wav_bytes(play_segment(chosen, start, end, speed), fs), format="audio/wav", loop=loop)
+
+
+def play_segment(partials: fpt.Partials, start_s: float, end_s: float, speed: float) -> np.ndarray:
+    """Resynthesis of the partials between two times, played at a speed (pitch unchanged)."""
+    segment = partials.select(time_s=(start_s, end_s))
+    fs = partials.grid.fs
+    factor = 1.0
+    if speed != 1.0:
+        stretched = fpt.transforms.time_stretch(segment, 1.0 / speed)
+        factor = stretched.grid.hop / segment.grid.hop
+        segment = stretched
+    audio = fpt.synthesize(segment)
+    return audio[int(start_s * factor * fs) : int(np.ceil(end_s * factor * fs))]
+
+
+def scope(partials: fpt.Partials, key: str) -> fpt.Partials:
+    """The selected partials if the user chose them (and some are selected), otherwise all."""
+    selected = st.session_state.get("selection", np.zeros(0, dtype=np.int64))
+    if len(selected) and st.toggle(f"Only the {len(selected)} selected partials", key=key):
+        return partials.select(track_ids=selected)
+    return partials
 
 
 def transform_tab(partials: fpt.Partials, fs: int) -> None:
+    partials = scope(partials, "transform_scope")
     left, middle, right = st.columns(3)
     semitones = left.slider("Pitch shift (semitones)", -12.0, 12.0, 0.0, 0.5)
     stretch = middle.slider("Time stretch (x)", 0.25, 4.0, 1.0, 0.05)
@@ -240,6 +292,9 @@ def details_tab(partials: fpt.Partials) -> None:
 def export_tab(partials: fpt.Partials, y: np.ndarray, fs: int, name: str, analysis: fpt.AnalysisConfig,
                tracking: fpt.TrackingConfig) -> None:
     stem = Path(name).stem.replace(" ", "_").replace(":", "")
+    chosen = scope(partials, "export_scope")
+    if chosen is not partials:
+        partials, y, stem = chosen, fpt.synthesize(chosen), f"{stem}_selection"
     columns = st.columns(4)
     columns[0].download_button("Partials (.parquet)", file_bytes(partials, ".parquet"), f"{stem}.parquet")
     columns[1].download_button("Partials (.sdif)", file_bytes(partials, ".sdif"), f"{stem}.sdif")

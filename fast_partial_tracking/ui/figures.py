@@ -244,3 +244,35 @@ def length_histogram(partials: Partials, height: int = 260) -> Any:
     fig.update_layout(height=height, margin={"l": 60, "r": 20, "t": 10, "b": 40},
                       xaxis_title="partial length (frames)", yaxis_title="partials", bargap=0.05)
     return fig
+
+
+_NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+
+def note_name(frequency_hz: float, a4_hz: float = 440.0) -> str:
+    """Nearest equal-tempered note with its deviation in cents, e.g. ``"A4 +3"``."""
+    if not np.isfinite(frequency_hz) or frequency_hz <= 0:
+        return ""
+    midi = 69.0 + 12.0 * np.log2(frequency_hz / a4_hz)
+    nearest = int(np.rint(midi))
+    cents = int(np.rint(100.0 * (midi - nearest)))
+    return f"{_NOTE_NAMES[nearest % 12]}{nearest // 12 - 1} {cents:+d}"
+
+
+def track_figure(track: Any, height: int = 360) -> Any:
+    """Frequency and level of one partial over time, in two panels with a shared time axis."""
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08)
+    fig.add_trace(_go().Scatter(x=track.time_s, y=track.frequency_hz, mode="lines+markers", name="frequency",
+                                line={"color": PALETTE[track.id % len(PALETTE)], "width": 2}, marker={"size": 4},
+                                hovertemplate="%{x:.3f} s<br>%{y:.2f} Hz<extra></extra>"), row=1, col=1)
+    fig.add_trace(_go().Scatter(x=track.time_s, y=track.amplitude_db, mode="lines+markers", name="level",
+                                line={"color": "#444444", "width": 2}, marker={"size": 4},
+                                hovertemplate="%{x:.3f} s<br>%{y:.1f} dB<extra></extra>"), row=2, col=1)
+    fig.update_yaxes(title_text="Frequency (Hz)", row=1, col=1)
+    fig.update_yaxes(title_text="Level (dB)", row=2, col=1)
+    fig.update_xaxes(title_text="Time (s)", row=2, col=1)
+    fig.update_layout(height=height, margin={"l": 70, "r": 20, "t": 10, "b": 40}, showlegend=False,
+                      plot_bgcolor="white")
+    return fig

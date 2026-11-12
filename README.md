@@ -81,9 +81,10 @@ sidebar.
 - **Settings:** tune the window, hop, Q, threshold, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
 - **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level.
 - **Select:** click partials, or drag a box or lasso over them, to replace, add to or remove from the selection. You can also select by rule (time, frequency, level, length) or select the harmonics of a fundamental. Unselected partials are drawn in grey.
-- **Listen:** play the original, the resynthesis and the residual, or solo a frequency band or chosen partials.
-- **Transform:** pitch shift, time stretch or change the gain and hear the result immediately.
-- **Export:** download Parquet, SDIF, WAV, or the settings as JSON for use with `fpt analyze --config`.
+- **Inspect:** the selected partials are listed with start, end, length, mean frequency, nearest note and peak level; pick one to plot its frequency and level over time, or play the selection.
+- **Listen:** play the original, the resynthesis and the residual, or play all or only the selected partials between two times, looped and at a slower or faster speed (the pitch stays the same).
+- **Transform:** pitch shift, time stretch or change the gain of all or only the selected partials and hear the result immediately.
+- **Export:** download Parquet, SDIF, WAV, or the settings as JSON for use with `fpt analyze --config`; all partials or only the selection.
 
 ## Working with partials
 

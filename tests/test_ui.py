@@ -66,7 +66,21 @@ def test_harmonic_selection_highlights_partials() -> None:
     next(n for n in at.number_input if n.label == "Fundamental (Hz)").set_value(220.0)
     [b for b in at.button if b.label == "Select"][1].click().run()  # rule form first, then harmonics
     assert not at.exception, at.exception
-    assert any("partials selected" in c.value and not c.value.startswith("0 ") for c in at.caption)
+    heading = next(h.value for h in at.subheader if h.value.startswith("Selection:"))
+    assert int(heading.split()[1]) >= 8
+    assert any(sb.label == "Inspect partial" for sb in at.selectbox)
+
+    # Listen: selected partials over a time range at half speed, looped.
+    play = next(r for r in at.radio if r.label == "Play")
+    assert play.options == ["Selected partials", "All partials"]
+    at.slider(key="play_range").set_value((0.2, 0.6)).run()
+    next(s for s in at.select_slider if s.label == "Speed").set_value(0.5).run()
+    assert not at.exception, at.exception
+
+    # Transform and Export can be limited to the selection.
+    at.toggle(key="transform_scope").set_value(True).run()
+    at.toggle(key="export_scope").set_value(True).run()
+    assert not at.exception, at.exception
 
 
 def test_selection_traces_and_point_mapping() -> None:
@@ -83,3 +97,14 @@ def test_selection_traces_and_point_mapping() -> None:
     index = int(np.flatnonzero(np.isfinite(fig.data[curve].customdata[:, 0]))[0])
     points = [{"curve_number": curve, "point_index": index}, {"curve_number": 0, "point_index": 0}]
     assert figures.track_ids_from_points(fig, points).tolist() == [int(fig.data[curve].customdata[index, 0])]
+
+
+def test_note_names_and_track_figure() -> None:
+    assert figures.note_name(440.0) == "A4 +0"
+    assert figures.note_name(261.63) == "C4 +0"
+    assert figures.note_name(1010.2) == "B5 +39"
+    assert figures.note_name(0.0) == ""
+    x, fs = data.synthetic("vibrato", duration=0.5)
+    partials = track(x, fs, AnalysisConfig(window_length=511))
+    fig = figures.track_figure(partials.track(0))
+    assert len(fig.data) == 2

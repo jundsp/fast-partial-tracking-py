@@ -91,11 +91,10 @@ class FrameGrid:
     def midpoint_offsets(self) -> tuple[int, int]:
         """Model times (n_curr, n_prev) at which consecutive frames are compared.
 
-        Eqs. (10)-(11) compare frame k-1 at +H/2 with frame k at -H/2. Like MATLAB,
-        this evaluates n = -floor(H/2) - 1 for frame k and n = ceil(H/2) - 1 for frame
-        k-1, which is one sample earlier than the paper's midpoint.
+        Eqs. (10)-(11) compare frame k-1 at +H/2 with frame k at -H/2, i.e. both at the
+        midpoint between the two frame origins (n = -floor(H/2) and n = ceil(H/2)).
         """
-        return -(self.hop // 2) - 1, -(-self.hop // 2) - 1
+        return -(self.hop // 2), -(-self.hop // 2)
 
     def center(self, frame: int | np.ndarray) -> int | np.ndarray:
         """Padded sample index of a frame's time origin n = 0."""

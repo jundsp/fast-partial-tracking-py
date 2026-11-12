@@ -27,7 +27,7 @@ tracking = fpt.TrackingConfig(delta=0.2, zeta_f=50, zeta_a=15)
 
 partials = fpt.track(x, fs, analysis, tracking)
 y = fpt.synthesize(partials)
-print(f"R-SNR = {fpt.rsnr(x, y):.2f} dB")        # 22.27 dB, same as MATLAB jun_demo
+print(f"R-SNR = {fpt.rsnr(x, y):.2f} dB")        # 22.34 dB, same as MATLAB jun_demo
 
 partials.save("demo.parquet")                     # or .arrows / .sdif / .bin
 partials.frequency_hz, partials.amplitude, partials.track_id   # flat columns

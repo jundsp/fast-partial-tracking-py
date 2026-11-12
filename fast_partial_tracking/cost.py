@@ -15,20 +15,20 @@ from fast_partial_tracking.model import angular_frequency, log_amplitude
 
 
 def cost_variances(tracking: TrackingConfig) -> tuple[float, float]:
-    """Returns the denominators (var_f, var_a) of eq. (8) from ζ_f, ζ_a and δ.
+    """Returns the denominators (2σ_f², 2σ_a²) of eq. (8) from ζ_f, ζ_a and δ (eqs. 12-13).
 
-    Eq. (8) is written as exp(-Δf²/(2σ_f²) - Δa²/(2σ_a²)); this returns the values
-    used in place of 2σ_f² and 2σ_a², with the same formula as ``jun_track_partials.m``:
-    var = -ζ² ln((δ-1)/(δ-2)).
+    The useful cost A (eq. 8) equals the spurious cost B = 1 - (1-δ)A (eq. 9) when
+    A = 1/(2-δ). Requiring this crossover at |Δf| = ζ_f (and |Δa| = ζ_a) gives
+    2σ² = ζ² / ln((2-δ)/(1-δ)).
 
     Args:
         tracking: Tracking settings.
 
     Returns:
-        (var_f in Hz², var_a in natural-log-amplitude units²).
+        (2σ_f² in Hz², 2σ_a² in natural-log-amplitude units²).
     """
-    ratio = np.log((tracking.delta - 1.0) / (tracking.delta - 2.0))
-    return -(tracking.zeta_f_hz**2) * ratio, -(tracking.zeta_a_log**2) * ratio
+    ratio = np.log((2.0 - tracking.delta) / (1.0 - tracking.delta))
+    return tracking.zeta_f_hz**2 / ratio, tracking.zeta_a_log**2 / ratio
 
 
 def midpoint_parameters(

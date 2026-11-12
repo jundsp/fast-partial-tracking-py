@@ -15,8 +15,8 @@ zetaA = zetaA/20*log(10);
 y = y(:,1);
 L = length(y);
 
-varF = -zetaF^2*log((delta-1)/(delta-2));
-varA = -zetaA^2*log((delta-1)/(delta-2));
+varF = -zetaF^2/log((delta-1)/(delta-2));
+varA = -zetaA^2/log((delta-1)/(delta-2));
 
 if OverSample > 1
     win = jun_bhwindow(N,1);
@@ -53,7 +53,7 @@ n = (0:N-1)' - n_center;
 i = (0:Q);
 p = bsxfun(@power, n, i);
 pD = bsxfun(@times, bsxfun(@power, n, (0:Q-1)), 1:Q);
-n_midpoint = [-floor(H/2) ceil(H/2)] + n_center;
+n_midpoint = [-floor(H/2) ceil(H/2)] + n_center + 1;
 
 [~, max_sample] = max(abs(ypad));
 maxS = 20*log10(max(abs(fft(win.*ypad(max_sample + (0:N-1)-n_center),Ndft))));

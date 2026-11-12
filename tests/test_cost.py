@@ -66,3 +66,18 @@ def test_cost_crossover_and_ties() -> None:
     df = np.sqrt(-var_f * np.log(1.0 - a_tie))
     cost, useful = assignment_costs(zeros, zeros, zeros, np.array([df]), var_f, var_a, tracking.delta)
     assert cost[0, 0] == pytest.approx(a_tie)
+
+
+@pytest.mark.parametrize("delta", [0.1, 0.2, 0.5, 0.9])
+def test_crossover_is_at_zeta(delta: float) -> None:
+    """Eqs. (12)-(13): useful and spurious costs are equal exactly at |Δ| = ζ."""
+    tracking = TrackingConfig(delta=delta, zeta_f=37.0, zeta_a=12.0)
+    var_f, var_a = cost_variances(tracking)
+    zeros = np.zeros(1)
+    for offset, expect_useful in [(-1e-6, True), (1e-6, False)]:
+        _, useful = assignment_costs(zeros, zeros, zeros, np.array([37.0 + offset]), var_f, var_a, delta)
+        assert bool(useful[0, 0]) is expect_useful
+    a_zeta = tracking.zeta_a_log
+    for offset, expect_useful in [(-1e-9, True), (1e-9, False)]:
+        _, useful = assignment_costs(zeros, zeros, np.array([a_zeta + offset]), zeros, var_f, var_a, delta)
+        assert bool(useful[0, 0]) is expect_useful

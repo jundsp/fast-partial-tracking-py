@@ -107,6 +107,7 @@ class DdmEstimator:
         mid = int(matlab_round(grid.window_length / 2)) - 1
         self._check_rows = self.basis[[0, mid, grid.window_length - 1]]
         self.amplitude_guard = analysis.amplitude_guard
+        self.max_peaks = analysis.max_peaks
 
     def __call__(self, frame: np.ndarray, threshold_db: float) -> FrameEstimate:
         """Estimates the model parameters of every peak in one frame.
@@ -129,6 +130,11 @@ class DdmEstimator:
         valid = solved & self._is_stable(alpha)
         alpha[valid, 0] = self._estimate_alpha0(alpha[valid], spectra.weighted[peaks.bin[valid], 0], peaks.bin[valid])
         valid &= self._within_amplitude_bound(alpha, frame)
+        if self.max_peaks is not None and np.count_nonzero(valid) > self.max_peaks:
+            candidates = np.flatnonzero(valid)
+            loudest = candidates[np.argsort(-alpha[candidates, 0].real, kind="stable")[: self.max_peaks]]
+            valid = np.zeros_like(valid)
+            valid[loudest] = True
         return FrameEstimate(alpha[valid], peaks.bin[valid], spectrum, peaks)
 
     def _ddm_spectra(self, frame: np.ndarray) -> _DdmSpectra:

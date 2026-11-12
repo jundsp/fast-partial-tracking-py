@@ -46,6 +46,8 @@ class AnalysisConfig:
             by the MATLAB code since fast-partial-tracking 02c2fd6); ``"legacy"`` is the
             earlier jun_ddm.m check (log-amplitude compared with a linear bound, which almost
             never triggers and lets Q >= 3 estimates explode).
+        max_peaks: Keep at most this many peaks per frame, the loudest by estimated
+            amplitude (None for no limit). Limits the number of simultaneous partials.
     """
 
     window_length: int = 2047
@@ -58,6 +60,7 @@ class AnalysisConfig:
     ddm_bins: int | None = None
     geometry: Geometry = "centered"
     amplitude_guard: AmplitudeGuard = "center"
+    max_peaks: int | None = None
 
     def __post_init__(self) -> None:
         _require(isinstance(self.window_length, (int, np.integer)) and self.window_length >= 4,
@@ -73,6 +76,8 @@ class AnalysisConfig:
         _require(self.ddm_bins is None or self.ddm_bins >= 1, f"ddm_bins must be >= 1, got {self.ddm_bins}")
         _require(self.geometry in ("centered", "matlab"), f"unknown geometry {self.geometry!r}")
         _require(self.amplitude_guard in ("center", "legacy"), f"unknown amplitude_guard {self.amplitude_guard!r}")
+        _require(self.max_peaks is None or (isinstance(self.max_peaks, (int, np.integer)) and self.max_peaks >= 1),
+                 f"max_peaks must be None or an integer >= 1, got {self.max_peaks!r}")
         _require(isinstance(self.threshold_reference, (int, float)) or self.threshold_reference in ("signal", "full_scale"),
                  f"threshold_reference must be 'signal', 'full_scale' or a dB value, got {self.threshold_reference!r}")
 

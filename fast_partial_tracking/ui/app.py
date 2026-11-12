@@ -109,8 +109,10 @@ def settings(fs: int) -> tuple[fpt.AnalysisConfig, fpt.TrackingConfig, int]:
         window = st.sidebar.selectbox("Window type", ["blackman_harris", "hann"])
         hop_div = st.sidebar.select_slider("Hop (fraction of window)", [2, 4, 8, 16], value=8 if window == "blackman_harris" else 4,
                                            format_func=lambda d: f"1/{d}")
+        limit = st.sidebar.slider("Max partials per frame", 0, 200, 0, 5,
+                                  help="Keep only the loudest estimates in each frame (0 = no limit).")
         analysis = fpt.AnalysisConfig.from_duration(fs, window_ms=window_ms, window=window, poly_order=order,
-                                                    threshold_db=float(threshold))
+                                                    threshold_db=float(threshold), max_peaks=limit or None)
         analysis = fpt.AnalysisConfig(**{**asdict(analysis), "hop_size": max(1, analysis.window_length // hop_div)})
     else:
         n = int(2 ** nextpow2(0.025 * fs) - 1)

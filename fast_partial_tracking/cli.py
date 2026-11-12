@@ -38,6 +38,8 @@ def _analysis_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--window", choices=["blackman_harris", "hann"], default="blackman_harris")
     group.add_argument("--order", type=int, default=2, help="polynomial order Q")
     group.add_argument("--threshold-db", type=float, default=-60.0, help="peak threshold below the loudest frame")
+    group.add_argument("--max-peaks", type=int, default=None, metavar="N",
+                       help="keep at most the N loudest peaks per frame (default: no limit)")
     group.add_argument("--hop-factor", type=int, default=4, help="matlab preset: H = N / hop-factor")
     group.add_argument("--oversample", type=int, default=2, help="matlab preset: DFT oversampling")
     group = parser.add_argument_group("tracking")
@@ -57,7 +59,7 @@ def _configs(args: argparse.Namespace, fs: float) -> tuple[AnalysisConfig, Track
         n = args.window_length or int(2 ** np.ceil(np.log2(0.025 * fs)) - 1)
         return AnalysisConfig.matlab(n, args.hop_factor, args.oversample, args.threshold_db, args.order), tracking
     common = dict(hop_size=args.hop, n_fft=args.n_fft, window=args.window, poly_order=args.order,
-                  threshold_db=args.threshold_db)
+                  threshold_db=args.threshold_db, max_peaks=args.max_peaks)
     if args.window_length:
         return AnalysisConfig(window_length=args.window_length, **common), tracking
     return AnalysisConfig.from_duration(fs, window_ms=args.window_ms or 46.0, **common), tracking

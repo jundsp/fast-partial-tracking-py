@@ -116,3 +116,25 @@ def test_process_yields_all_frames() -> None:
     batch = track(x, fs, config)
     assert [f.index for f in frames] == list(range(batch.num_frames))
     np.testing.assert_array_equal(np.concatenate([f.track_id for f in frames]), batch.track_id)
+
+
+def test_max_peaks_keeps_the_loudest_estimates() -> None:
+    import fast_partial_tracking as fpt
+    from fast_partial_tracking.analysis import DdmEstimator
+
+    x, fs = fpt.data.demo_sound()
+    full_config = fpt.AnalysisConfig(threshold_db=-70)
+    limited_config = fpt.AnalysisConfig(threshold_db=-70, max_peaks=12)
+    grid = fpt.FrameGrid.from_config(fs, full_config).with_signal_length(x.size)
+    padded = np.concatenate([np.zeros(grid.pad_front), x, np.zeros(grid.pad_back)])
+    frame = padded[20 * grid.hop : 20 * grid.hop + grid.window_length]
+    everything = DdmEstimator(grid, full_config)(frame, -120.0).alpha[:, 0].real
+    kept = DdmEstimator(grid, limited_config)(frame, -120.0).alpha[:, 0].real
+    assert everything.size > 12 and kept.size == 12
+    np.testing.assert_allclose(np.sort(kept), np.sort(everything)[-12:])
+
+    # Tracked output: never more than the limit per frame (unlinked peaks are dropped too).
+    limited = fpt.track(x, fs, limited_config)
+    assert np.bincount(limited.frame).max() <= 12
+    with pytest.raises(ValueError):
+        fpt.AnalysisConfig(max_peaks=0)

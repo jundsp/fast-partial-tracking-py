@@ -135,3 +135,12 @@ def test_frequency_axes_and_line_weights() -> None:
     assert len({t.line.width for t in weighted}) > 1
     ids = lambda traces: sorted(int(v) for t in traces for v in t.customdata[:, 0] if np.isfinite(v))  # noqa: E731
     assert ids(flat) == ids(weighted)
+
+
+def test_max_partials_per_frame_slider() -> None:
+    at = AppTest.from_file(str(APP), default_timeout=120)
+    at.run()
+    before = int(at.metric[1].value)
+    next(s for s in at.sidebar.slider if s.label == "Max partials per frame").set_value(10).run()
+    assert not at.exception, at.exception
+    assert int(at.metric[1].value) < before

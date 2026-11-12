@@ -79,7 +79,7 @@ any audio, to view, select, play, transform and export it.
 
 ![The web app: analysis and tracking settings in the sidebar, R-SNR and timing at the top, and the waveform above the partials drawn over the spectrogram](docs/assets/web_app.png)
 
-- **Settings:** tune the window, hop, Q, threshold, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
+- **Settings:** tune the window, hop, Q, threshold, maximum partials per frame, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
 - **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level. The frequency axis can be linear, logarithmic or labelled with note names, and lines can be weighted by level so quiet partials fade out.
 - **Select:** click partials, or drag a box or lasso over them, to replace, add to or remove from the selection. You can also select by rule (time, frequency, level, length) or select the harmonics of a fundamental. Unselected partials are drawn in grey.
 - **Inspect:** the selected partials are listed with start, end, length, mean frequency, nearest note and peak level; pick one to plot its frequency and level over time, or play the selection.
@@ -141,6 +141,7 @@ with fpt.io.open_writer("live.arrows", tracker.grid, order=2) as writer:
 | `threshold_db` | -60 | peaks below the reference by more than this are ignored |
 | `threshold_reference` | `"signal"` | the loudest frame of the input, `"full_scale"` (a sine of amplitude 1), or a dB value |
 | `geometry` | `"centered"` | frame k is centred on sample k·H |
+| `max_peaks` | None | keep at most this many peaks per frame, the loudest by estimated amplitude |
 
 `TrackingConfig` (Sections 3.3–3.4):
 - **`delta`** (δ, default 0.2): the preference for continuing partials over spurious links.
@@ -153,6 +154,7 @@ fpt analyze in.wav -o partials.parquet --report
 fpt analyze long.wav -o partials.arrows --stream
 fpt analyze in.wav -o p.parquet --preset matlab
 fpt analyze in.wav -o p.parquet --config settings.json --prune 3
+fpt analyze in.wav -o p.parquet --max-peaks 40
 fpt synth partials.parquet -o resynthesis.wav
 fpt convert partials.parquet -o partials.sdif
 fpt convert other_tool.sdif -o partials.parquet --fs 48000

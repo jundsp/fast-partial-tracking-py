@@ -103,50 +103,84 @@ class AudioSource:
 
 
 class ScrollingDisplay:
-    """A time-frequency image of the latest partials, updated in place.
+    """A time-frequency image of the latest partials, in the ``fpt.plot`` style.
+
+    Each partial is drawn in its own palette color on a light background; louder partials
+    are more saturated. The image scrolls by one column per frame and is composited with
+    NumPy, so a redraw costs the same however many partials there are.
 
     Args:
         hop_s: Time between frames in seconds.
         window_s: Visible duration.
         max_frequency_hz: Top of the frequency axis.
         bins: Frequency resolution of the image.
-        dynamic_range_db: Levels shown below the loudest partial seen so far.
+        dynamic_range_db: Levels shown below the loudest partial seen so far; quieter
+            partials fade into the background.
+        line_bins: Line thickness in frequency bins.
     """
 
+    background = np.array([0.93, 0.93, 0.93])
+
     def __init__(self, hop_s: float, window_s: float = 6.0, max_frequency_hz: float = 5000.0,
-                 bins: int = 400, dynamic_range_db: float = 70.0) -> None:
+                 bins: int = 400, dynamic_range_db: float = 50.0, line_bins: int = 2) -> None:
+        from matplotlib.colors import to_rgb
+        from matplotlib.ticker import FuncFormatter
+
         self.columns = int(round(window_s / hop_s))
         self.max_frequency_hz = max_frequency_hz
         self.bins = bins
         self.dynamic_range_db = dynamic_range_db
-        self.image = np.full((bins, self.columns), np.nan)
+        self.line_bins = line_bins
+        self.palette = np.array([to_rgb(c) for c in fpt.plot.PALETTE])
+        self.level = np.full((bins, self.columns), -np.inf)
+        self.track = np.full((bins, self.columns), -1, dtype=np.int64)
         self.loudest = -np.inf
         self.fig, self.ax = plt.subplots(figsize=(10, 4.5))
-        self.artist = self.ax.imshow(self.image, origin="lower", aspect="auto", cmap="magma", interpolation="nearest",
+        self.artist = self.ax.imshow(self._render(), origin="lower", aspect="auto", interpolation="nearest",
                                      extent=(-window_s, 0.0, 0.0, max_frequency_hz))
-        self.ax.set_xlabel("time relative to now (s)")
-        self.ax.set_ylabel("frequency (Hz)")
-        self.ax.set_facecolor("black")
+        self.ax.set_xlabel("Time relative to now (s)")
+        self.ax.set_ylabel("Frequency (Hz)")
+        self.ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
+        self.ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:g}"))
 
     def add(self, frames: list[fpt.Frame]) -> None:
         """Scrolls the image by one column per frame and draws the frames' partials."""
         if not frames:
             return
         shift = min(len(frames), self.columns)
-        self.image = np.roll(self.image, -shift, axis=1)
-        self.image[:, -shift:] = np.nan
+        self.level = np.roll(self.level, -shift, axis=1)
+        self.track = np.roll(self.track, -shift, axis=1)
+        self.level[:, -shift:] = -np.inf
+        self.track[:, -shift:] = -1
         for column, frame in zip(range(self.columns - shift, self.columns), frames[-shift:]):
             keep = frame.frequency_hz < self.max_frequency_hz
-            if not np.any(keep):
-                continue
-            rows = (frame.frequency_hz[keep] / self.max_frequency_hz * self.bins).astype(int)
-            np.fmax.at(self.image[:, column], rows, frame.amplitude_db[keep])
-            self.loudest = max(self.loudest, float(frame.amplitude_db[keep].max()))
+            if np.any(keep):
+                self._draw_column(column, frame.frequency_hz[keep], frame.amplitude_db[keep], frame.track_id[keep])
+
+    def _draw_column(self, column: int, frequency: np.ndarray, level: np.ndarray, track: np.ndarray) -> None:
+        """Paints one frame's partials into a column, quietest first so loud ones stay on top."""
+        order = np.argsort(level)
+        base = (frequency[order] / self.max_frequency_hz * self.bins).astype(int)
+        for offset in range(self.line_bins):
+            rows = np.clip(base + offset, 0, self.bins - 1)
+            self.level[rows, column] = level[order]
+            self.track[rows, column] = track[order]
+        self.loudest = max(self.loudest, float(level.max()))
+
+    def _render(self) -> np.ndarray:
+        """RGB image: palette color per partial, blended into the background by level."""
+        image = np.broadcast_to(self.background, (*self.level.shape, 3)).copy()
+        lit = self.track >= 0
+        if np.any(lit):
+            strength = np.clip((self.level[lit] - (self.loudest - self.dynamic_range_db)) / self.dynamic_range_db, 0, 1)
+            strength = np.sqrt(strength)[:, None]  # quiet partials fade out, loud ones saturate
+            colors = self.palette[self.track[lit] % len(self.palette)]
+            image[lit] = strength * colors + (1 - strength) * self.background
+        return image
 
     def draw(self, title: str) -> None:
         """Pushes the current image to the screen."""
-        self.artist.set_data(self.image)
-        self.artist.set_clim(self.loudest - self.dynamic_range_db, self.loudest)
+        self.artist.set_data(self._render())
         self.ax.set_title(title)
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()

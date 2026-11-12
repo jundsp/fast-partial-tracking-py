@@ -33,7 +33,10 @@ def spectrogram_trace(audio: np.ndarray, fs: float, max_frequency_hz: float, flo
     from scipy.signal import spectrogram
 
     n_fft = int(2 ** np.ceil(np.log2(0.04 * fs)))
-    freqs, times, magnitude = spectrogram(audio, fs, nperseg=n_fft, noverlap=n_fft * 3 // 4, mode="magnitude")
+    # Pad half a window on each side so frames are centred from t = 0 to the end, like the partials.
+    padded = np.pad(np.asarray(audio, dtype=float), n_fft // 2)
+    freqs, times, magnitude = spectrogram(padded, fs, nperseg=n_fft, noverlap=n_fft * 3 // 4, mode="magnitude")
+    times = times - (n_fft // 2) / fs
     keep = freqs <= max_frequency_hz
     step = max(1, times.size // _MAX_COLUMNS)
     level = 20 * np.log10(magnitude[keep][:, ::step] + 1e-12)

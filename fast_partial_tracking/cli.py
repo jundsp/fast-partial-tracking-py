@@ -185,7 +185,7 @@ def cmd_ui(args: argparse.Namespace) -> None:
     try:
         import streamlit  # noqa: F401
     except ImportError as exc:
-        raise SystemExit("the UI needs streamlit: pip install 'fast-partial-tracking[ui]'") from exc
+        raise SystemExit("the UI needs streamlit and plotly: pip install streamlit plotly") from exc
     app = Path(__file__).parent / "ui" / "app.py"
     command = [sys.executable, "-m", "streamlit", "run", str(app), "--server.headless", str(args.headless).lower()]
     if args.port:

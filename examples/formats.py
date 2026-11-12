@@ -42,7 +42,7 @@ def main() -> None:
     try:
         import polars as pl
     except ImportError:
-        log.info("install polars to run the query example: pip install 'fast-partial-tracking[dataframes]'")
+        log.info("install polars to run the query example: pip install polars")
         return
     table = (
         pl.read_parquet(data_dir / "demo.parquet")

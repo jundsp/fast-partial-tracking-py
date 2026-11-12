@@ -408,7 +408,7 @@ class Partials:
         try:
             import polars as pl
         except ImportError as exc:
-            raise ImportError("to_polars() needs polars: pip install 'fast-partial-tracking[dataframes]'") from exc
+            raise ImportError("to_polars() needs polars: pip install polars") from exc
         return pl.DataFrame(self.to_dict())
 
     def to_pandas(self) -> Any:
@@ -416,7 +416,7 @@ class Partials:
         try:
             import pandas as pd
         except ImportError as exc:
-            raise ImportError("to_pandas() needs pandas: pip install 'fast-partial-tracking[dataframes]'") from exc
+            raise ImportError("to_pandas() needs pandas: pip install pandas") from exc
         return pd.DataFrame(self.to_dict())
 
     def plot(self, audio: np.ndarray | None = None, **kwargs: Any) -> Any:

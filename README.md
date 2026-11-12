@@ -22,19 +22,21 @@ exactly, and tests check this against reference data exported from MATLAB.
 
 ## Install
 
+Not on PyPI yet; install from GitHub (needs git):
+
 ```sh
-pip install "fast-partial-tracking[all]"
+pip install "fast-partial-tracking[all] @ git+https://github.com/jundsp/fast-partial-tracking-py.git@v0.2.0"
 ```
 
-That installs everything (web app, plotting, live microphone, speed-up, dataframes). The
-core alone is `pip install fast-partial-tracking`; pick individual extras with e.g.
-`pip install "fast-partial-tracking[ui,plot]"`:
+That installs everything. Without `[all]` you get the core: analysis, tracking, synthesis,
+file formats, plotting, the `fpt` command, and the numexpr speed-up (about 1.7× faster
+single-threaded). That is the right choice when another package depends on this one. For
+specific extras use e.g. `[ui]`. With uv, use the same string with `uv add` (in a project)
+or `uv pip install`. Replace `@v0.2.0` with `@main` for the latest unreleased code. Extras:
 
 | extra | adds |
 |---|---|
-| `plot` | matplotlib plotting (`fpt.plot`, `Partials.plot()`, `fpt plot`) |
-| `ui` | the web app (`fpt ui`) |
-| `fast` | numexpr for the DDM's hot loop (about 1.7× faster single-threaded) |
+| `ui` | the web app (`fpt ui`): streamlit, plotly |
 | `dataframes` | `Partials.to_polars()` / `to_pandas()` |
 | `live` | sounddevice, for `examples/live_microphone.py` |
 | `all` | all of the above |

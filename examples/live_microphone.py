@@ -8,7 +8,7 @@ frame), so drawing costs the same however many partials there are.
 The title shows the **lag**: audio waiting in the queue. If processing fell behind it would
 grow without bound; a warning is logged above 0.5 s and the maximum is reported at the end.
 
-Needs ``uv sync --extra dev`` in a clone (or ``pip install 'fast-partial-tracking[live,plot]'``)
+Needs ``uv sync --extra dev`` in a clone (or ``pip install sounddevice``)
 and microphone permission for your terminal.
 
 Run:
@@ -83,7 +83,7 @@ class AudioSource:
             import sounddevice as sd
         except ImportError:
             log.error("The microphone needs sounddevice: run `uv sync --extra dev` in the repo "
-                      "(or `pip install 'fast-partial-tracking[live]'`). Use --simulate to run without one.")
+                      "(or `pip install sounddevice`). Use --simulate to run without one.")
             self.blocks.put(None)
             return
         callback = lambda data, *_: self.blocks.put(data[:, 0].copy())  # noqa: E731

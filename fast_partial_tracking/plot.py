@@ -1,4 +1,4 @@
-"""Publication-style plots of partials (optional dependency: ``pip install fast-partial-tracking[plot]``).
+"""Publication-style plots of partials (uses matplotlib).
 
 The default look: each partial drawn as a smooth line in its own saturated color over a
 light, low-contrast spectrogram, with serif (Computer Modern) typography.
@@ -54,7 +54,7 @@ def _pyplot() -> Any:
     try:
         import matplotlib.pyplot as plt
     except ImportError as exc:
-        raise ImportError("plotting needs matplotlib: pip install 'fast-partial-tracking[plot]'") from exc
+        raise ImportError("plotting needs matplotlib: pip install matplotlib") from exc
     return plt
 
 

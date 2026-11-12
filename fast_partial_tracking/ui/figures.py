@@ -17,7 +17,7 @@ def _go() -> Any:
     try:
         import plotly.graph_objects as go
     except ImportError as exc:
-        raise ImportError("interactive figures need plotly: pip install 'fast-partial-tracking[ui]'") from exc
+        raise ImportError("interactive figures need plotly: pip install plotly") from exc
     return go
 
 

@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 try:  # optional, multi-threaded evaluation of the dominant complex exponential
     import numexpr as _numexpr
-except ImportError:  # pragma: no cover - exercised when the [fast] extra is absent
+except ImportError:  # pragma: no cover - exercised when numexpr is absent
     _numexpr = None
 
 

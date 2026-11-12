@@ -928,6 +928,10 @@ name = "fast-partial-tracking"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "numexpr", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numexpr", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -941,10 +945,6 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
-    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "numexpr", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numexpr", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "plotly" },
@@ -961,10 +961,6 @@ dataframes = [
     { name = "polars", version = "2.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 dev = [
-    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "numexpr", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numexpr", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "plotly" },
@@ -976,20 +972,10 @@ dev = [
     { name = "streamlit", version = "1.65.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "streamlit", version = "1.67.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-fast = [
-    { name = "numexpr", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numexpr", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
 live = [
     { name = "sounddevice" },
 ]
-plot = [
-    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
 ui = [
-    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "plotly" },
     { name = "streamlit", version = "1.65.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "streamlit", version = "1.67.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -997,12 +983,9 @@ ui = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fast-partial-tracking", extras = ["fast", "plot", "dataframes", "ui", "live"], marker = "extra == 'all'" },
-    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.7" },
-    { name = "matplotlib", marker = "extra == 'ui'", specifier = ">=3.7" },
-    { name = "numexpr", marker = "extra == 'dev'", specifier = ">=2.8" },
-    { name = "numexpr", marker = "extra == 'fast'", specifier = ">=2.8" },
+    { name = "fast-partial-tracking", extras = ["dataframes", "ui", "live"], marker = "extra == 'all'" },
+    { name = "matplotlib", specifier = ">=3.7" },
+    { name = "numexpr", specifier = ">=2.8" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "pandas", marker = "extra == 'dataframes'", specifier = ">=2.0" },
     { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.0" },
@@ -1020,7 +1003,7 @@ requires-dist = [
     { name = "streamlit", marker = "extra == 'dev'", specifier = ">=1.35" },
     { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.35" },
 ]
-provides-extras = ["fast", "plot", "dataframes", "ui", "live", "all", "dev"]
+provides-extras = ["dataframes", "ui", "live", "all", "dev"]
 
 [[package]]
 name = "fonttools"

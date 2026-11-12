@@ -32,8 +32,8 @@ DEFAULT_OUT = Path.home() / "Documents" / "output" / "fast-partial-tracking" / "
 def run_case(ref: dict[str, Any]) -> tuple[fpt.Partials, np.ndarray, dict[str, Any]]:
     """Tracks one reference input with the reference settings and compares the results."""
     n, hop_factor, oversample, threshold, order, delta, zeta_f, zeta_a = ref["params"]
-    analysis = fpt.AnalysisConfig(int(n), int(hop_factor), int(oversample), float(threshold), int(order))
-    tracking = fpt.TrackingConfig(float(delta), float(zeta_f), float(zeta_a))
+    analysis = fpt.AnalysisConfig.matlab(int(n), int(hop_factor), int(oversample), float(threshold), int(order))
+    tracking = fpt.TrackingConfig.matlab(float(delta), float(zeta_f), float(zeta_a))
     x = np.atleast_1d(ref["x"]).astype(float)
     partials = fpt.track(x, float(ref["fs"]), analysis, tracking)
     y = fpt.synthesize(partials)

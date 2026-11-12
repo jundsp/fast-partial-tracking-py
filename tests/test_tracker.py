@@ -14,7 +14,7 @@ from .conftest import MatlabCase, harmonic_signal
 def test_streaming_equals_batch(demo_case: MatlabCase, block: int) -> None:
     batch = track(demo_case.x, demo_case.fs, demo_case.analysis, demo_case.tracking)
     tracker = PartialTracker(
-        demo_case.fs, demo_case.analysis, demo_case.tracking, threshold_db=batch.metadata["threshold_db"]
+        demo_case.fs, demo_case.analysis, demo_case.tracking, reference_db=batch.metadata["reference_db"]
     )
     frames = []
     for start in range(0, demo_case.x.size, block):
@@ -76,14 +76,17 @@ def test_reference_level_of_silence() -> None:
 
 
 def test_config_validation_and_sanitizing() -> None:
-    with pytest.raises(ValueError):
-        TrackingConfig(delta=1.5)
-    with pytest.raises(ValueError):
-        AnalysisConfig(order=0)
-    config = AnalysisConfig(window_length=2.5, hop_factor=3, oversample=3)
-    assert config.effective_window_length == 4
-    assert config.effective_oversample == 4
-    assert config.effective_hop_factor == 8
+    for bad in [dict(delta=1.5), dict(zeta_f_hz=0.0), dict(zeta_a_db=-1.0)]:
+        with pytest.raises(ValueError):
+            TrackingConfig(**bad)
+    for bad in [dict(poly_order=0), dict(window_length=3), dict(threshold_db=40.0), dict(hop_size=0),
+                dict(n_fft=1000), dict(window="kaiser"), dict(geometry="other"), dict(threshold_reference="peak")]:
+        with pytest.raises(ValueError):
+            AnalysisConfig(**bad)
+    config = AnalysisConfig.matlab(window_length=2.5, hop_factor=3, oversample=3, peak_threshold_db=40)
+    assert config.window_length == 4 and config.window == "blackman_harris"
+    assert config.hop_size == 1  # round(4 / 8), rounding half away from zero
+    assert config.threshold_db == -40.0
     assert matlab_round(2.5) == 3 and matlab_round(-2.5) == -3
     assert nextpow2(1) == 0 and nextpow2(1025) == 11
 

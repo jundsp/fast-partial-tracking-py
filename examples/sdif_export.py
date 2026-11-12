@@ -32,7 +32,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     x, fs = sf.read(args.audio, always_2d=True)
-    partials = fpt.track(x[:, 0], fs, fpt.AnalysisConfig(window_length=2047, oversample=2, peak_threshold_db=-50))
+    partials = fpt.track(x[:, 0], fs, fpt.AnalysisConfig(window_length=2047, threshold_db=-50))
     path = args.out / "data" / f"{args.audio.stem}.sdif"
     partials.save(path)
 

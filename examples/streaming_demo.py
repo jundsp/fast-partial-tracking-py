@@ -59,8 +59,10 @@ def main() -> None:
 
     source, fs = sf.read(DEFAULT_AUDIO)
     total = int(args.seconds * fs)
-    analysis = fpt.AnalysisConfig(window_length=2047, oversample=2, peak_threshold_db=-50)
-    tracker = fpt.PartialTracker(fs, analysis, threshold_db=None)
+    # A live stream cannot know its loudest frame in advance, so the threshold is
+    # relative to full scale.
+    analysis = fpt.AnalysisConfig(window_length=2047, threshold_db=-70, threshold_reference="full_scale")
+    tracker = fpt.PartialTracker(fs, analysis)
     synth = fpt.Synthesizer(tracker.grid)
     stream_path = args.out / "data" / "live.arrows"
 

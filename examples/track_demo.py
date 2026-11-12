@@ -79,15 +79,15 @@ def main() -> None:
 
     x, fs = sf.read(args.audio, always_2d=True)
     x = x[:, 0]
-    # Same settings as jun_demo.m.
-    analysis = fpt.AnalysisConfig(
+    # Same settings as jun_demo.m, reproduced exactly by the MATLAB preset.
+    analysis = fpt.AnalysisConfig.matlab(
         window_length=int(2 ** np.ceil(np.log2(0.025 * fs)) - 1),
         hop_factor=4,
         oversample=2,
         peak_threshold_db=-50,
         order=2,
     )
-    tracking = fpt.TrackingConfig(delta=0.2, zeta_f=50, zeta_a=15)
+    tracking = fpt.TrackingConfig.matlab(delta=0.2, zeta_f=50, zeta_a=15)
 
     partials = fpt.track(x, fs, analysis, tracking)
     y = fpt.synthesize(partials)

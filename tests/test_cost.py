@@ -24,7 +24,7 @@ def test_cost_matrices_match_matlab(matlab_case: MatlabCase) -> None:
     grid = FrameGrid.from_config(case.fs, case.analysis).with_signal_length(case.x.size)
     estimator = DdmEstimator(grid, case.analysis)
     padded = np.concatenate([np.zeros(grid.pad_front), case.x, np.zeros(grid.pad_back)])
-    threshold = reference_level_db(case.x, grid, estimator.window) - abs(case.analysis.peak_threshold_db)
+    threshold = reference_level_db(case.x, grid, estimator.window) + case.analysis.threshold_db
     var_f, var_a = cost_variances(case.tracking)
     n_curr, n_prev = grid.midpoint_offsets
 
@@ -52,7 +52,7 @@ def test_cost_matrices_match_matlab(matlab_case: MatlabCase) -> None:
 
 
 def test_cost_crossover_and_ties() -> None:
-    tracking = TrackingConfig(delta=0.2, zeta_f=50.0, zeta_a=15.0)
+    tracking = TrackingConfig(delta=0.2, zeta_f_hz=50.0, zeta_a_db=15.0)
     var_f, var_a = cost_variances(tracking)
     zeros = np.zeros(1)
     near, _ = assignment_costs(zeros, zeros, zeros, np.array([1.0]), var_f, var_a, tracking.delta)
@@ -71,7 +71,7 @@ def test_cost_crossover_and_ties() -> None:
 @pytest.mark.parametrize("delta", [0.1, 0.2, 0.5, 0.9])
 def test_crossover_is_at_zeta(delta: float) -> None:
     """Eqs. (12)-(13): useful and spurious costs are equal exactly at |Δ| = ζ."""
-    tracking = TrackingConfig(delta=delta, zeta_f=37.0, zeta_a=12.0)
+    tracking = TrackingConfig(delta=delta, zeta_f_hz=37.0, zeta_a_db=12.0)
     var_f, var_a = cost_variances(tracking)
     zeros = np.zeros(1)
     for offset, expect_useful in [(-1e-6, True), (1e-6, False)]:

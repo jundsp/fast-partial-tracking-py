@@ -20,29 +20,37 @@ log = logging.getLogger("fast_partial_tracking.cli")
 
 
 def _analysis_args(parser: argparse.ArgumentParser) -> None:
-    defaults = AnalysisConfig()
     tracking = TrackingConfig()
-    parser.add_argument("--window-length", type=int, default=None, help="N in samples (default: ~25 ms, 2^k - 1)")
-    parser.add_argument("--hop-factor", type=int, default=defaults.hop_factor)
-    parser.add_argument("--oversample", type=int, default=2, help="DFT oversampling (>1 uses Blackman-Harris)")
-    parser.add_argument("--threshold-db", type=float, default=-50.0, help="peak threshold below the loudest frame")
-    parser.add_argument("--order", type=int, default=defaults.order, help="polynomial order Q")
-    parser.add_argument("--delta", type=float, default=tracking.delta)
-    parser.add_argument("--zeta-f", type=float, default=tracking.zeta_f, help="Hz")
-    parser.add_argument("--zeta-a", type=float, default=tracking.zeta_a, help="dB")
+    group = parser.add_argument_group("analysis")
+    group.add_argument("--preset", choices=["default", "matlab"], default="default",
+                       help="'matlab' reproduces jun_track_partials.m (uses --hop-factor/--oversample)")
+    group.add_argument("--window-ms", type=float, default=None, help="window duration (default 46 ms)")
+    group.add_argument("--window-length", type=int, default=None, help="window length N in samples")
+    group.add_argument("--hop", type=int, default=None, help="hop size H in samples")
+    group.add_argument("--n-fft", type=int, default=None, help="DFT size")
+    group.add_argument("--window", choices=["blackman_harris", "hann"], default="blackman_harris")
+    group.add_argument("--order", type=int, default=2, help="polynomial order Q")
+    group.add_argument("--threshold-db", type=float, default=-60.0, help="peak threshold below the loudest frame")
+    group.add_argument("--hop-factor", type=int, default=4, help="matlab preset: H = N / hop-factor")
+    group.add_argument("--oversample", type=int, default=2, help="matlab preset: DFT oversampling")
+    group = parser.add_argument_group("tracking")
+    group.add_argument("--delta", type=float, default=tracking.delta)
+    group.add_argument("--zeta-f", type=float, default=tracking.zeta_f_hz, help="Hz")
+    group.add_argument("--zeta-a", type=float, default=tracking.zeta_a_db, help="dB")
     parser.add_argument("--no-alpha", action="store_true", help="do not store model coefficients")
 
 
 def _configs(args: argparse.Namespace, fs: float) -> tuple[AnalysisConfig, TrackingConfig]:
-    window_length = args.window_length or int(2 ** np.ceil(np.log2(0.025 * fs)) - 1)
-    analysis = AnalysisConfig(
-        window_length=window_length,
-        hop_factor=args.hop_factor,
-        oversample=args.oversample,
-        peak_threshold_db=args.threshold_db,
-        order=args.order,
-    )
-    return analysis, TrackingConfig(delta=args.delta, zeta_f=args.zeta_f, zeta_a=args.zeta_a)
+    tracking = TrackingConfig(delta=args.delta, zeta_f_hz=args.zeta_f, zeta_a_db=args.zeta_a)
+    if args.preset == "matlab":
+        n = args.window_length or int(2 ** np.ceil(np.log2(0.025 * fs)) - 1)
+        analysis = AnalysisConfig.matlab(n, args.hop_factor, args.oversample, args.threshold_db, args.order)
+        return analysis, tracking
+    common = dict(hop_size=args.hop, n_fft=args.n_fft, window=args.window, poly_order=args.order,
+                  threshold_db=args.threshold_db)
+    if args.window_length:
+        return AnalysisConfig(window_length=args.window_length, **common), tracking
+    return AnalysisConfig.from_duration(fs, window_ms=args.window_ms or 46.0, **common), tracking
 
 
 def cmd_analyze(args: argparse.Namespace) -> None:
@@ -57,7 +65,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
 
 def _analyze_stream(args: argparse.Namespace, fs: float, analysis: AnalysisConfig, tracking: TrackingConfig) -> None:
     """Reads, tracks and writes block by block, with bounded memory."""
-    order = None if args.no_alpha else analysis.effective_order
+    order = None if args.no_alpha else analysis.poly_order
     tracker = PartialTracker(fs, analysis, tracking, keep_alpha=not args.no_alpha)
     with open_writer(args.output, tracker.grid, order=order) as writer:
         for block in sf.blocks(str(args.input), blocksize=args.block_size, always_2d=True):

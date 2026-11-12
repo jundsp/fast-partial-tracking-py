@@ -67,18 +67,12 @@ class MatlabCase:
     @property
     def analysis(self) -> AnalysisConfig:
         n, hop_factor, oversample, threshold, order, *_ = self.data["params"]
-        return AnalysisConfig(
-            window_length=int(n),
-            hop_factor=int(hop_factor),
-            oversample=int(oversample),
-            peak_threshold_db=float(threshold),
-            order=int(order),
-        )
+        return AnalysisConfig.matlab(int(n), int(hop_factor), int(oversample), float(threshold), int(order))
 
     @property
     def tracking(self) -> TrackingConfig:
         *_, delta, zeta_f, zeta_a = self.data["params"]
-        return TrackingConfig(delta=float(delta), zeta_f=float(zeta_f), zeta_a=float(zeta_a))
+        return TrackingConfig.matlab(float(delta), float(zeta_f), float(zeta_a))
 
     @property
     def partials(self) -> np.ndarray:

@@ -85,15 +85,15 @@ class DdmEstimator:
 
     Args:
         grid: Frame geometry.
-        analysis: Analysis settings (window, oversampling, order Q).
+        analysis: Analysis settings (window, order Q, DDM bins).
     """
 
     def __init__(self, grid: FrameGrid, analysis: AnalysisConfig) -> None:
         self.grid = grid
-        self.order = analysis.effective_order
-        # Number of bins on each side of a peak that may enter the DDM system.
-        self.num_bins = self.order * analysis.effective_oversample
-        self.window, self.window_derivative = get_window(analysis.window_name, grid.window_length)
+        self.order = analysis.poly_order
+        # Number of bins on each side of a peak (peak included) entering the DDM system.
+        self.num_bins = analysis.resolved_ddm_bins
+        self.window, self.window_derivative = get_window(analysis.window, grid.window_length)
 
         n_dft = grid.n_dft
         self.n = grid.offsets

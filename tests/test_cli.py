@@ -22,7 +22,7 @@ def demo_wav(tmp_path: Path, demo_case: MatlabCase) -> Path:
 
 def test_analyze_matches_matlab_demo(tmp_path: Path, demo_wav: Path, demo_case: MatlabCase) -> None:
     out = tmp_path / "demo.parquet"
-    main(["analyze", str(demo_wav), "-o", str(out)])
+    main(["analyze", str(demo_wav), "-o", str(out), "--preset", "matlab", "--threshold-db", "-50"])
     partials = read(out)
     assert partials.num_tracks == demo_case["num_tracks"]
     np.testing.assert_array_equal(partials.track_id + 1, demo_case.partials[:, 5])

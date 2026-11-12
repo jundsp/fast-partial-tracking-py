@@ -60,7 +60,7 @@ def test_parquet_without_alpha_and_row_groups(tmp_path: Path, demo_partials: Par
 def test_streaming_writer_from_tracker(tmp_path: Path, demo_case: MatlabCase, demo_partials: Partials) -> None:
     path = tmp_path / "live.parquet"
     tracker = PartialTracker(
-        demo_case.fs, demo_case.analysis, demo_case.tracking, threshold_db=demo_partials.metadata["threshold_db"]
+        demo_case.fs, demo_case.analysis, demo_case.tracking, reference_db=demo_partials.metadata["reference_db"]
     )
     with open_writer(path, tracker.grid, order=tracker.estimator.order, frames_per_group=8) as writer:
         for start in range(0, demo_case.x.size, 1000):

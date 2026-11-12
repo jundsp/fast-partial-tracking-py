@@ -86,10 +86,10 @@ class PartialTracker:
         fs: Sampling rate in Hz.
         analysis: Short-term analysis settings.
         tracking: Assignment cost settings.
-        threshold_db: Absolute peak-picking level in dB (20*log10 of the DFT magnitude).
-            If None, the threshold is ``analysis.peak_threshold_db`` below the level of a
-            full-scale (amplitude 1) sinusoid. ``track`` instead uses the loudest frame of
-            the signal as the reference, like the MATLAB code.
+        reference_db: Level (dB of DFT magnitude) that ``analysis.threshold_db`` is
+            relative to. Needed when ``analysis.threshold_reference == "signal"``, because
+            a stream cannot look ahead to its loudest frame (``track`` computes it from the
+            whole input); otherwise derived from the configuration.
         keep_alpha: Whether emitted frames carry the full model coefficients.
         workers: Threads used to analyse frames in parallel when a pushed block holds
             several frames. Linking stays sequential, so results do not depend on it.
@@ -100,7 +100,7 @@ class PartialTracker:
         fs: float,
         analysis: AnalysisConfig | None = None,
         tracking: TrackingConfig | None = None,
-        threshold_db: float | None = None,
+        reference_db: float | None = None,
         keep_alpha: bool = True,
         workers: int = 1,
     ) -> None:
@@ -109,10 +109,8 @@ class PartialTracker:
         self.grid = FrameGrid.from_config(fs, self.analysis)
         self.estimator = DdmEstimator(self.grid, self.analysis)
         self.var_f, self.var_a = cost_variances(self.tracking)
-        if threshold_db is None:
-            full_scale = 20.0 * np.log10(np.sum(self.estimator.window) / 2.0)
-            threshold_db = full_scale - abs(self.analysis.peak_threshold_db)
-        self.threshold_db = float(threshold_db)
+        self.reference_db = self._resolve_reference(reference_db)
+        self.threshold_db = self.reference_db + self.analysis.threshold_db
         self.keep_alpha = keep_alpha
         self.n_prev, self.n_curr = self.grid.midpoint_offsets[1], self.grid.midpoint_offsets[0]
 
@@ -124,6 +122,17 @@ class PartialTracker:
         self._prev: FrameEstimate | None = None
         self._pending = _PendingFrame.empty(self.estimator.order)
         self._executor = ThreadPoolExecutor(workers) if workers > 1 else None
+
+    def _resolve_reference(self, reference_db: float | None) -> float:
+        """Reference level for the peak threshold, from the argument or the configuration."""
+        if reference_db is not None:
+            return float(reference_db)
+        reference = self.analysis.threshold_reference
+        if isinstance(reference, (int, float)):
+            return float(reference)
+        if reference == "signal":
+            log.warning("threshold_reference='signal' needs the whole signal; using full scale for this stream")
+        return full_scale_level_db(self.estimator.window)
 
     def push(self, samples: np.ndarray) -> list[Frame]:
         """Feeds a block of audio and returns the frames that became final.
@@ -230,6 +239,11 @@ class PartialTracker:
         )
 
 
+def full_scale_level_db(window: np.ndarray) -> float:
+    """Peak DFT level (dB) of a sinusoid with amplitude 1 analysed with ``window``."""
+    return float(20.0 * np.log10(np.sum(window) / 2.0))
+
+
 def reference_level_db(x: np.ndarray, grid: FrameGrid, window: np.ndarray) -> float:
     """Spectral peak level of the frame centered on the loudest sample (MATLAB ``maxS``).
 
@@ -263,10 +277,11 @@ def track(
     keep_alpha: bool = True,
     workers: int | None = None,
 ) -> Partials:
-    """Tracks the partials of a whole signal (``jun_track_partials.m``).
+    """Tracks the partials of a whole signal.
 
-    The peak-picking threshold is relative to the loudest frame of the signal, exactly as
-    in the MATLAB implementation. Use ``PartialTracker`` directly for live input.
+    With ``threshold_reference="signal"`` (the default) the peak threshold is relative to
+    the loudest frame of the input, as in ``jun_track_partials.m``. Use
+    ``PartialTracker`` directly for live input.
 
     Args:
         x: Input audio. For multi-channel input of shape (L, C) the first channel is
@@ -288,10 +303,10 @@ def track(
     if x.ndim > 1:
         x = x[:, 0]
     grid = FrameGrid.from_config(fs, analysis)
-    estimator_window = DdmEstimator(grid, analysis).window
-    threshold = reference_level_db(x, grid, estimator_window) - abs(analysis.peak_threshold_db)
+    window = DdmEstimator(grid, analysis).window
+    reference = reference_level_db(x, grid, window) if analysis.threshold_reference == "signal" else None
     workers = workers or os.cpu_count() or 1
-    tracker = PartialTracker(fs, analysis, tracking, threshold_db=threshold, keep_alpha=keep_alpha, workers=workers)
+    tracker = PartialTracker(fs, analysis, tracking, reference_db=reference, keep_alpha=keep_alpha, workers=workers)
 
     frames = _collect(tracker.push(x), writer) + _collect(tracker.flush(), writer)
     metadata = build_metadata(tracker)
@@ -310,9 +325,8 @@ def build_metadata(tracker: PartialTracker) -> dict[str, Any]:
     return {
         "analysis": tracker.analysis.to_dict(),
         "tracking": tracker.tracking.to_dict(),
+        "reference_db": tracker.reference_db,
         "threshold_db": tracker.threshold_db,
-        "order": tracker.estimator.order,
-        "window": tracker.analysis.window_name,
         "package_version": package_version,
     }
 

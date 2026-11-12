@@ -47,7 +47,7 @@ def main() -> None:
 
     source, fs = sf.read(DEFAULT_AUDIO)
     x = np.tile(source, int(np.ceil(args.seconds * fs / source.size)))[: int(args.seconds * fs)]
-    analysis = fpt.AnalysisConfig(window_length=2047, oversample=2, peak_threshold_db=-50)
+    analysis = fpt.AnalysisConfig(window_length=2047, threshold_db=-50)
 
     rows = []
     for workers in sorted({1, args.workers}):

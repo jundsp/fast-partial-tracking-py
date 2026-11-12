@@ -16,7 +16,7 @@ def _setup(case: MatlabCase) -> tuple[FrameGrid, DdmEstimator, np.ndarray, float
     grid = FrameGrid.from_config(case.fs, case.analysis).with_signal_length(case.x.size)
     estimator = DdmEstimator(grid, case.analysis)
     padded = np.concatenate([np.zeros(grid.pad_front), case.x, np.zeros(grid.pad_back)])
-    threshold = reference_level_db(case.x, grid, estimator.window) - abs(case.analysis.peak_threshold_db)
+    threshold = reference_level_db(case.x, grid, estimator.window) + case.analysis.threshold_db
     return grid, estimator, padded, threshold
 
 
@@ -52,7 +52,7 @@ def test_frames_match_matlab(matlab_case: MatlabCase) -> None:
 
 def test_recovers_stationary_sinusoid() -> None:
     fs = 16000.0
-    analysis = AnalysisConfig(window_length=1023, oversample=2, order=2)
+    analysis = AnalysisConfig(window_length=1023, n_fft=2048, poly_order=2)
     grid = FrameGrid.from_config(fs, analysis)
     estimator = DdmEstimator(grid, analysis)
     n = grid.offsets

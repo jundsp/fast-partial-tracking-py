@@ -17,6 +17,7 @@ from fast_partial_tracking.compat.matlab import matlab_round, nextpow2
 WindowName = Literal["hann", "blackman_harris"]
 Geometry = Literal["centered", "matlab"]
 ThresholdReference = Literal["signal", "full_scale"]
+AmplitudeGuard = Literal["center", "matlab"]
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,10 @@ class AnalysisConfig:
             Default: Q times the DFT oversampling factor.
         geometry: ``"centered"`` puts the model origin at the window centre and frame k
             at input sample k*H; ``"matlab"`` reproduces the MATLAB frame placement.
+        amplitude_guard: Rejects exploding estimates. ``"center"`` drops a peak whose
+            estimated amplitude at the frame centre exceeds the largest sample; ``"matlab"``
+            is jun_ddm.m's check (log-amplitude compared with a linear bound, which almost
+            never triggers and lets Q >= 3 estimates explode).
     """
 
     window_length: int = 2047
@@ -51,6 +56,7 @@ class AnalysisConfig:
     threshold_reference: ThresholdReference | float = "signal"
     ddm_bins: int | None = None
     geometry: Geometry = "centered"
+    amplitude_guard: AmplitudeGuard = "center"
 
     def __post_init__(self) -> None:
         _require(isinstance(self.window_length, (int, np.integer)) and self.window_length >= 4,
@@ -65,6 +71,7 @@ class AnalysisConfig:
         _require(self.threshold_db <= 0, f"threshold_db is relative to the reference and must be <= 0, got {self.threshold_db}")
         _require(self.ddm_bins is None or self.ddm_bins >= 1, f"ddm_bins must be >= 1, got {self.ddm_bins}")
         _require(self.geometry in ("centered", "matlab"), f"unknown geometry {self.geometry!r}")
+        _require(self.amplitude_guard in ("center", "matlab"), f"unknown amplitude_guard {self.amplitude_guard!r}")
         _require(isinstance(self.threshold_reference, (int, float)) or self.threshold_reference in ("signal", "full_scale"),
                  f"threshold_reference must be 'signal', 'full_scale' or a dB value, got {self.threshold_reference!r}")
 
@@ -130,6 +137,7 @@ class AnalysisConfig:
             threshold_reference="signal",
             ddm_bins=q * oversample,
             geometry="matlab",
+            amplitude_guard="matlab",
         )
 
     @property

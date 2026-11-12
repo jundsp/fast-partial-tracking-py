@@ -55,3 +55,16 @@ def test_centered_geometry_is_at_least_as_good_as_matlab() -> None:
         diffs.append(scores[1] - scores[0])
     assert np.mean(diffs) >= -0.1
     assert min(diffs) >= -1.0
+
+
+def test_center_amplitude_guard_keeps_cubic_models_stable() -> None:
+    """Q = 3 with MATLAB's loose guard lets exploding estimates through; the default does not."""
+    from fast_partial_tracking import data
+
+    x, fs = data.synthetic("chord", duration=1.0, noise_db=-50)
+    scores = {}
+    for guard in ("center", "matlab"):
+        config = AnalysisConfig(window_length=1023, poly_order=3, amplitude_guard=guard)
+        scores[guard] = rsnr(x, synthesize(track(x, fs, config)))
+    assert scores["center"] > 15.0
+    assert scores["center"] > scores["matlab"] + 5.0

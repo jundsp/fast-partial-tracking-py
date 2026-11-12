@@ -106,6 +106,7 @@ class DdmEstimator:
         self.centering = np.exp(1j * self.omega * grid.origin)
         mid = int(matlab_round(grid.window_length / 2)) - 1
         self._check_rows = self.basis[[0, mid, grid.window_length - 1]]
+        self.amplitude_guard = analysis.amplitude_guard
 
     def __call__(self, frame: np.ndarray, threshold_db: float) -> FrameEstimate:
         """Estimates the model parameters of every peak in one frame.
@@ -203,12 +204,19 @@ class DdmEstimator:
             return np.log(peak_value) - np.log(model_value)
 
     def _within_amplitude_bound(self, alpha: np.ndarray, frame: np.ndarray) -> np.ndarray:
-        """Same final test as jun_ddm.m.
+        """Rejects estimates whose amplitude is implausibly large.
 
-        The log-amplitude at the frame edges and centre is compared with twice the
-        largest sample value (a loose sanity bound that only rejects exploding models).
+        ``"center"``: the real sinusoid's amplitude at n = 0, 2 exp(Re alpha_0), must not
+        exceed twice the largest sample, i.e. Re alpha_0 <= log max|x|. Only the centre is
+        checked because the window vanishes at the edges, where the polynomial is
+        unconstrained.
+
+        ``"matlab"``: jun_ddm.m compares the log-amplitude at the edges and centre with
+        twice the largest *linear* sample value, a loose bound kept for exact equivalence.
         """
         with np.errstate(all="ignore"):
+            if self.amplitude_guard == "center":
+                return alpha[:, 0].real <= np.log(np.max(np.abs(frame)))
             checks = alpha.real @ self._check_rows.T
         return np.all(checks <= 2.0 * np.max(np.abs(frame)), axis=1)
 

@@ -59,4 +59,5 @@ fast_partial_tracking = ["py.typed", "data/*.wav"]
 testpaths = ["tests"]
 markers = [
     "matlab: needs a local MATLAB installation (enable with --matlab)",
+    "examples: runs the example scripts end to end (deselect with -m 'not examples')",
 ]

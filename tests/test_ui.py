@@ -108,3 +108,30 @@ def test_note_names_and_track_figure() -> None:
     partials = track(x, fs, AnalysisConfig(window_length=511))
     fig = figures.track_figure(partials.track(0))
     assert len(fig.data) == 2
+
+
+def test_frequency_axes_and_line_weights() -> None:
+    x, fs = data.synthetic("chord", duration=0.5)
+    partials = track(x, fs, AnalysisConfig(window_length=511))
+    assert figures.frequency_axis("linear", 0, 4000)["range"] == [0, 4000]
+    log = figures.frequency_axis("log", 0, 4000)
+    assert log["type"] == "log" and log["range"][0] == pytest.approx(np.log10(figures.LOG_MIN_HZ))
+    wide = figures.frequency_axis("notes", 30, 8000)
+    assert all(t.startswith("C") for t in wide["ticktext"]) and "C4" in wide["ticktext"]
+    narrow = figures.frequency_axis("notes", 200, 800)
+    assert {"A4", "E5", "B3"} <= set(narrow["ticktext"])
+    assert narrow["tickvals"][narrow["ticktext"].index("A4")] == pytest.approx(440.0)
+    with pytest.raises(ValueError):
+        figures.frequency_axis("mel", 0, 4000)
+
+    fig = figures.overview_figure(partials, x, x, max_frequency_hz=4000, frequency_scale="notes", min_frequency_hz=100)
+    assert fig.layout.yaxis2.type == "log"
+    heatmap = next(t for t in fig.data if t.type == "heatmap")
+    assert min(heatmap.y) >= 100
+
+    flat = figures.partial_traces(partials)
+    weighted = figures.partial_traces(partials, weight_by_level=True)
+    assert len({t.line.width for t in flat}) == 1
+    assert len({t.line.width for t in weighted}) > 1
+    ids = lambda traces: sorted(int(v) for t in traces for v in t.customdata[:, 0] if np.isfinite(v))  # noqa: E731
+    assert ids(flat) == ids(weighted)

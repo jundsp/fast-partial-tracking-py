@@ -79,7 +79,7 @@ sidebar.
 ![The web app: analysis and tracking settings in the sidebar, R-SNR and timing at the top, and the waveform above the partials drawn over the spectrogram](docs/assets/web_app.png)
 
 - **Settings:** tune the window, hop, Q, threshold, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
-- **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level.
+- **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level. The frequency axis can be linear, logarithmic or labelled with note names, and lines can be weighted by level so quiet partials fade out.
 - **Select:** click partials, or drag a box or lasso over them, to replace, add to or remove from the selection. You can also select by rule (time, frequency, level, length) or select the harmonics of a fundamental. Unselected partials are drawn in grey.
 - **Inspect:** the selected partials are listed with start, end, length, mean frequency, nearest note and peak level; pick one to plot its frequency and level over time, or play the selection.
 - **Listen:** play the original, the resynthesis and the residual, or play all or only the selected partials between two times, looped and at a slower or faster speed (the pitch stays the same).

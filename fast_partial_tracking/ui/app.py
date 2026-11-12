@@ -183,16 +183,27 @@ def plot_selection(figure: Any, event: Any, mode: str) -> bool:
     return True
 
 
+def display_controls(fs: int) -> dict[str, Any]:
+    """Display options for the partials plot, as keyword arguments of the figure functions."""
+    band, scale, color, weight = st.columns([3, 2, 2, 1])
+    low, high = band.slider("Frequency range (Hz)", 0, fs // 2, (0, min(5000, fs // 2)), 10)
+    scale = scale.radio("Frequency axis", ["linear", "log", "notes"], horizontal=True,
+                        format_func=lambda s: {"linear": "Linear", "log": "Log", "notes": "Notes"}[s],
+                        help=f"Log and note axes start at {figures.LOG_MIN_HZ:g} Hz or above.")
+    color_by = color.radio("Color", ["track", "amplitude"], horizontal=True,
+                           format_func=lambda c: "by partial" if c == "track" else "by level")
+    weighted = weight.toggle("Weight", help="Draw loud partials thick and quiet ones thin and faint.")
+    return {"min_frequency_hz": float(low), "max_frequency_hz": float(max(high, low + 10)), "frequency_scale": scale,
+            "color_by": color_by, "weight_by_level": weighted}
+
+
 def overview_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int, signature: str) -> None:
     summary = fpt.selection.summarize(partials)
     selection_state(signature, partials.num_tracks)
     mode = selection_tools(partials, summary, fs)
-    left, right = st.columns([3, 1])
-    max_freq = left.slider("Max frequency (Hz)", 500, fs // 2, min(5000, fs // 2), 100)
-    color_by = right.radio("Color", ["track", "amplitude"], horizontal=True,
-                           format_func=lambda c: "by partial" if c == "track" else "by level")
+    display = display_controls(fs)
     selected = st.session_state.selection
-    figure = figures.overview_figure(partials, x, y, max_frequency_hz=max_freq, color_by=color_by, selected=selected)
+    figure = figures.overview_figure(partials, x, y, selected=selected, **display)
     event = st.plotly_chart(figure, width="stretch", on_select="rerun",
                             selection_mode=("points", "box", "lasso"), key="partials_plot")
     if plot_selection(figure, event, mode):

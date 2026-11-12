@@ -14,7 +14,7 @@ Example:
 
 from __future__ import annotations
 
-from fast_partial_tracking import io, plot, transforms
+from fast_partial_tracking import data, io, plot, transforms
 from fast_partial_tracking.config import AnalysisConfig, TrackingConfig
 from fast_partial_tracking.framing import FrameGrid
 from fast_partial_tracking.metrics import rsnr
@@ -32,6 +32,7 @@ __all__ = [
     "Synthesizer",
     "Track",
     "TrackingConfig",
+    "data",
     "io",
     "plot",
     "rsnr",

@@ -20,7 +20,7 @@ from fast_partial_tracking.io import read_sdif_tracks
 
 log = logging.getLogger("fast_partial_tracking.examples.sdif_export")
 
-DEFAULT_AUDIO = Path(__file__).parent / "audio" / "demo_sound.wav"
+DEFAULT_AUDIO = fpt.data.demo_sound_path()
 DEFAULT_OUT = Path.home() / "Documents" / "output" / "fast-partial-tracking" / "examples" / "sdif_export"
 
 

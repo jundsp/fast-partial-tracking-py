@@ -22,7 +22,7 @@ import fast_partial_tracking as fpt
 
 log = logging.getLogger("fast_partial_tracking.examples.benchmark")
 
-DEFAULT_AUDIO = Path(__file__).parent / "audio" / "demo_sound.wav"
+DEFAULT_AUDIO = fpt.data.demo_sound_path()
 DEFAULT_OUT = Path.home() / "Documents" / "output" / "fast-partial-tracking" / "examples" / "benchmark"
 
 

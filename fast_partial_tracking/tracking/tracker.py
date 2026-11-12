@@ -262,6 +262,22 @@ def full_scale_level_db(window: np.ndarray) -> float:
     return float(20.0 * np.log10(np.sum(window) / 2.0))
 
 
+def reference_level_at(x: np.ndarray, loudest: int, grid: FrameGrid, window: np.ndarray) -> float:
+    """Spectral peak level (dB) of the frame whose origin is input sample ``loudest``.
+
+    Args:
+        x: Input samples (only those within one window of ``loudest`` are read).
+        loudest: Index of the loudest sample.
+        grid: Frame geometry.
+        window: Analysis window.
+    """
+    start = loudest - grid.origin
+    segment = np.zeros(grid.window_length)
+    lo, hi = max(start, 0), min(start + grid.window_length, x.size)
+    segment[lo - start : hi - start] = x[lo:hi]
+    return float(20.0 * np.log10(np.max(np.abs(np.fft.fft(window * segment, grid.n_dft)))))
+
+
 def reference_level_db(x: np.ndarray, grid: FrameGrid, window: np.ndarray) -> float:
     """Spectral peak level of the frame centered on the loudest sample (MATLAB ``maxS``).
 
@@ -278,12 +294,7 @@ def reference_level_db(x: np.ndarray, grid: FrameGrid, window: np.ndarray) -> fl
     """
     if x.size == 0 or not np.any(x):
         return -np.inf
-    loudest = grid.pad_front + int(np.argmax(np.abs(x)))
-    start = loudest - grid.origin
-    padded = np.concatenate([np.zeros(grid.pad_front), x, np.zeros(grid.window_length)])
-    segment = padded[max(start, 0) : start + grid.window_length]
-    segment = np.pad(segment, (grid.window_length - segment.size, 0))
-    return float(20.0 * np.log10(np.max(np.abs(np.fft.fft(window * segment, grid.n_dft)))))
+    return reference_level_at(x, int(np.argmax(np.abs(x))), grid, window)
 
 
 def track(

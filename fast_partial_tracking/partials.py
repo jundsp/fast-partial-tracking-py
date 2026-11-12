@@ -419,6 +419,16 @@ class Partials:
             raise ImportError("to_pandas() needs pandas: pip install 'fast-partial-tracking[dataframes]'") from exc
         return pd.DataFrame(self.to_dict())
 
+    def plot(self, audio: np.ndarray | None = None, **kwargs: Any) -> Any:
+        """Draws the partials (over ``audio``'s spectrogram if given); see ``plot.partials``.
+
+        Returns:
+            The matplotlib axes.
+        """
+        from fast_partial_tracking.plot import partials as plot_partials
+
+        return plot_partials(self, audio=audio, **kwargs)
+
     def save(self, path: str | Path, **kwargs: Any) -> None:
         """Writes the partials to a file; the format follows the extension.
 

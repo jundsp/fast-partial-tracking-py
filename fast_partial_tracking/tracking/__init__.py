@@ -10,7 +10,13 @@ from __future__ import annotations
 from fast_partial_tracking.tracking.assignment import solve_assignment, useful_assignments
 from fast_partial_tracking.tracking.cost import assignment_costs, cost_variances, midpoint_parameters
 from fast_partial_tracking.tracking.labeling import Labeling, SetMatch, label_assignments, match_sets
-from fast_partial_tracking.tracking.tracker import PartialTracker, full_scale_level_db, reference_level_db, track
+from fast_partial_tracking.tracking.tracker import (
+    PartialTracker,
+    full_scale_level_db,
+    reference_level_at,
+    reference_level_db,
+    track,
+)
 
 __all__ = [
     "Labeling",
@@ -22,6 +28,7 @@ __all__ = [
     "label_assignments",
     "match_sets",
     "midpoint_parameters",
+    "reference_level_at",
     "reference_level_db",
     "solve_assignment",
     "track",

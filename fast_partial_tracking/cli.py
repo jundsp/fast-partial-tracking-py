@@ -1,20 +1,26 @@
-"""Command-line interface: ``fpt analyze | synth | convert | info``."""
+"""Command-line interface: ``fpt analyze | synth | convert | info | plot | ui``."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
+from fast_partial_tracking.analysis.windows import get_window
 from fast_partial_tracking.config import AnalysisConfig, TrackingConfig
+from fast_partial_tracking.framing import FrameGrid
 from fast_partial_tracking.io import open_writer, read, write
 from fast_partial_tracking.metrics import rsnr
+from fast_partial_tracking.partials import Partials
 from fast_partial_tracking.synthesis import synthesize
-from fast_partial_tracking.tracking.tracker import PartialTracker, track
+from fast_partial_tracking.tracking.tracker import PartialTracker, reference_level_at, track
 
 log = logging.getLogger("fast_partial_tracking.cli")
 
@@ -22,6 +28,7 @@ log = logging.getLogger("fast_partial_tracking.cli")
 def _analysis_args(parser: argparse.ArgumentParser) -> None:
     tracking = TrackingConfig()
     group = parser.add_argument_group("analysis")
+    group.add_argument("--config", type=Path, help="JSON file with 'analysis'/'tracking' settings (overrides flags)")
     group.add_argument("--preset", choices=["default", "matlab"], default="default",
                        help="'matlab' reproduces jun_track_partials.m (uses --hop-factor/--oversample)")
     group.add_argument("--window-ms", type=float, default=None, help="window duration (default 46 ms)")
@@ -37,15 +44,18 @@ def _analysis_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--delta", type=float, default=tracking.delta)
     group.add_argument("--zeta-f", type=float, default=tracking.zeta_f_hz, help="Hz")
     group.add_argument("--zeta-a", type=float, default=tracking.zeta_a_db, help="dB")
+    group.add_argument("--prune", type=int, default=0, metavar="N", help="drop partials shorter than N frames")
     parser.add_argument("--no-alpha", action="store_true", help="do not store model coefficients")
 
 
 def _configs(args: argparse.Namespace, fs: float) -> tuple[AnalysisConfig, TrackingConfig]:
+    if args.config:
+        settings = json.loads(args.config.read_text())
+        return AnalysisConfig(**settings.get("analysis", {})), TrackingConfig(**settings.get("tracking", {}))
     tracking = TrackingConfig(delta=args.delta, zeta_f_hz=args.zeta_f, zeta_a_db=args.zeta_a)
     if args.preset == "matlab":
         n = args.window_length or int(2 ** np.ceil(np.log2(0.025 * fs)) - 1)
-        analysis = AnalysisConfig.matlab(n, args.hop_factor, args.oversample, args.threshold_db, args.order)
-        return analysis, tracking
+        return AnalysisConfig.matlab(n, args.hop_factor, args.oversample, args.threshold_db, args.order), tracking
     common = dict(hop_size=args.hop, n_fft=args.n_fft, window=args.window, poly_order=args.order,
                   threshold_db=args.threshold_db)
     if args.window_length:
@@ -58,6 +68,8 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     fs = sf.info(str(args.input)).samplerate
     analysis, tracking = _configs(args, fs)
     if args.stream:
+        if args.prune:
+            raise SystemExit("--prune needs the whole result; drop --stream or prune later")
         _analyze_stream(args, fs, analysis, tracking)
     else:
         _analyze_batch(args, analysis, tracking)
@@ -66,21 +78,39 @@ def cmd_analyze(args: argparse.Namespace) -> None:
 def _analyze_stream(args: argparse.Namespace, fs: float, analysis: AnalysisConfig, tracking: TrackingConfig) -> None:
     """Reads, tracks and writes block by block, with bounded memory."""
     order = None if args.no_alpha else analysis.poly_order
-    tracker = PartialTracker(fs, analysis, tracking, keep_alpha=not args.no_alpha)
+    reference = _file_reference_db(args.input, fs, analysis) if analysis.threshold_reference == "signal" else None
+    tracker = PartialTracker(fs, analysis, tracking, reference_db=reference, keep_alpha=not args.no_alpha)
+    blocks = (block[:, 0] for block in sf.blocks(str(args.input), blocksize=args.block_size, always_2d=True))
     with open_writer(args.output, tracker.grid, order=order) as writer:
-        for block in sf.blocks(str(args.input), blocksize=args.block_size, always_2d=True):
-            for frame in tracker.push(block[:, 0]):
-                writer.write_frame(frame)
-        for frame in tracker.flush():
+        for frame in tracker.process(blocks):
             writer.write_frame(frame)
         writer.set_summary(tracker.grid, tracker.num_tracks)
     log.info(f"{tracker.num_tracks} partials, {tracker.grid.num_frames} frames -> {args.output}")
 
 
+def _file_reference_db(path: Path, fs: float, analysis: AnalysisConfig) -> float:
+    """Signal-relative threshold reference of a file, found with one bounded-memory pass."""
+    grid = FrameGrid.from_config(fs, analysis)
+    window = get_window(analysis.window, grid.window_length)[0]
+    loudest, peak, offset = 0, -1.0, 0
+    for block in sf.blocks(str(path), blocksize=65536, always_2d=True):
+        magnitude = np.abs(block[:, 0])
+        if magnitude.size and magnitude.max() > peak:
+            peak, loudest = float(magnitude.max()), offset + int(np.argmax(magnitude))
+        offset += magnitude.size
+    if peak <= 0:
+        return -np.inf
+    start = max(loudest - grid.window_length, 0)
+    excerpt, _ = sf.read(str(path), start=start, frames=2 * grid.window_length, always_2d=True)
+    return reference_level_at(excerpt[:, 0], loudest - start, grid, window)
+
+
 def _analyze_batch(args: argparse.Namespace, analysis: AnalysisConfig, tracking: TrackingConfig) -> None:
-    """Tracks the whole file at once (threshold relative to the loudest frame, like MATLAB)."""
+    """Tracks the whole file at once (threshold relative to the loudest frame)."""
     x, fs = sf.read(str(args.input), always_2d=True)
     partials = track(x[:, 0], fs, analysis, tracking, keep_alpha=not args.no_alpha)
+    if args.prune:
+        partials = partials.prune(args.prune)
     write(partials, args.output, include_alpha=not args.no_alpha)
     log.info(f"{partials.num_tracks} partials, {partials.num_frames} frames -> {args.output}")
     if args.report:
@@ -90,7 +120,7 @@ def _analyze_batch(args: argparse.Namespace, analysis: AnalysisConfig, tracking:
 def cmd_synth(args: argparse.Namespace) -> None:
     """Resynthesizes a partials file to audio."""
     partials = read(args.input)
-    y = synthesize(partials)
+    y = synthesize(partials, phase=args.phase)
     sf.write(str(args.output), y, int(round(partials.grid.fs)), subtype="FLOAT")
     log.info(f"wrote {y.size} samples at {partials.grid.fs:g} Hz -> {args.output}")
 
@@ -102,15 +132,70 @@ def cmd_convert(args: argparse.Namespace) -> None:
 
 
 def cmd_info(args: argparse.Namespace) -> None:
-    """Summarizes a partials file."""
+    """Summarizes a partials file: settings, counts and a partial-length histogram."""
     partials = read(args.input)
-    grid = partials.grid
-    duration = (grid.signal_length or 0) / grid.fs
-    log.info(f"{args.input}")
-    log.info(f"  fs={grid.fs:g} Hz, duration={duration:.3f} s, frames={partials.num_frames}, hop={grid.hop}")
-    log.info(f"  partials={partials.num_tracks}, rows={len(partials)}, alpha={'yes' if partials.alpha is not None else 'no'}")
-    if len(partials):
-        log.info(f"  frequency range {partials.frequency_hz.min():.1f}-{partials.frequency_hz.max():.1f} Hz")
+    for line in describe(partials, str(args.input)):
+        log.info(line)
+
+
+def describe(partials: Partials, name: str = "") -> list[str]:
+    """Human-readable summary lines of a result."""
+    grid, stats = partials.grid, partials.stats()
+    lines = [
+        name,
+        f"  audio     {stats['duration_s']:.3f} s at {grid.fs:g} Hz",
+        f"  frames    {stats['frames']} (N={grid.window_length}, hop={grid.hop}, n_fft={grid.n_dft}, {grid.geometry})",
+        f"  partials  {stats['partials']} ({stats['rows']} points, median length {stats['median_partial_frames']:.0f} frames)",
+    ]
+    if stats["rows"]:
+        lines.append(f"  range     {stats['min_frequency_hz']:.1f}-{stats['max_frequency_hz']:.1f} Hz, "
+                     f"loudest {stats['max_amplitude_db']:.1f} dB")
+        lengths = partials.track_lengths()
+        edges = [1, 2, 4, 8, 16, 32, 64, np.inf]
+        counts = np.histogram(lengths[lengths > 0], bins=edges)[0]
+        width = max(counts.max(), 1)
+        lines.append("  length (frames)")
+        for lo, hi, count in zip(edges[:-1], edges[1:], counts):
+            label = f"{lo}+" if np.isinf(hi) else f"{lo}-{int(hi) - 1}"
+            lines.append(f"    {label:>6}  {'#' * int(round(30 * count / width)):<30} {count}")
+    analysis = partials.metadata.get("analysis")
+    if analysis:
+        lines.append("  settings  " + ", ".join(f"{k}={v}" for k, v in analysis.items() if v is not None))
+    return [line for line in lines if line]
+
+
+def cmd_plot(args: argparse.Namespace) -> None:
+    """Plots a partials file (optionally over the audio's spectrogram) to an image."""
+    from fast_partial_tracking.plot import _pyplot
+    from fast_partial_tracking.plot import partials as plot_partials
+
+    plt = _pyplot()
+    partials = read(args.input)
+    audio = None
+    if args.audio:
+        audio, _ = sf.read(str(args.audio), always_2d=True)
+        audio = audio[:, 0]
+    fig, ax = plt.subplots(figsize=(10, 5))
+    plot_partials(partials, ax=ax, audio=audio, color_by=args.color_by, max_frequency_hz=args.max_freq)
+    fig.tight_layout()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.output, dpi=args.dpi)
+    log.info(f"figure -> {args.output}")
+
+
+def cmd_ui(args: argparse.Namespace) -> None:
+    """Opens the interactive web app (needs the [ui] extra)."""
+    try:
+        import streamlit  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit("the UI needs streamlit: pip install 'fast-partial-tracking[ui]'") from exc
+    app = Path(__file__).parent / "ui" / "app.py"
+    command = [sys.executable, "-m", "streamlit", "run", str(app), "--server.headless", str(args.headless).lower()]
+    if args.port:
+        command += ["--server.port", str(args.port)]
+    if args.audio:
+        command += ["--", "--audio", str(args.audio.resolve())]
+    subprocess.run(command, check=False)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -131,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     synth = sub.add_parser("synth", help="resynthesize a partials file")
     synth.add_argument("input", type=Path)
     synth.add_argument("-o", "--output", type=Path, required=True, help="audio file, e.g. .wav")
+    synth.add_argument("--phase", choices=["measured", "integrated"], default=None)
     synth.set_defaults(func=cmd_synth)
 
     convert = sub.add_parser("convert", help="convert between partial file formats")
@@ -141,6 +227,21 @@ def build_parser() -> argparse.ArgumentParser:
     info = sub.add_parser("info", help="summarize a partials file")
     info.add_argument("input", type=Path)
     info.set_defaults(func=cmd_info)
+
+    plot = sub.add_parser("plot", help="plot a partials file to an image")
+    plot.add_argument("input", type=Path)
+    plot.add_argument("-o", "--output", type=Path, required=True, help="image file, e.g. .png or .pdf")
+    plot.add_argument("--audio", type=Path, help="draw this audio's spectrogram underneath")
+    plot.add_argument("--color-by", choices=["amplitude", "track", "none"], default="amplitude")
+    plot.add_argument("--max-freq", type=float, default=None, help="upper frequency limit in Hz")
+    plot.add_argument("--dpi", type=int, default=150)
+    plot.set_defaults(func=cmd_plot)
+
+    ui = sub.add_parser("ui", help="open the interactive web app")
+    ui.add_argument("audio", type=Path, nargs="?", help="audio file to open")
+    ui.add_argument("--port", type=int, default=None)
+    ui.add_argument("--headless", action="store_true", help="do not open a browser")
+    ui.set_defaults(func=cmd_ui)
     return parser
 
 

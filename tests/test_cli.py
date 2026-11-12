@@ -42,4 +42,36 @@ def test_streaming_analyze_convert_synth_info(
     assert fs == 44100 and y.size == sf.info(demo_wav).frames
     with caplog.at_level(logging.INFO, logger="fast_partial_tracking.cli"):
         main(["info", str(arrows)])
-    assert "partials=" in caplog.text
+    assert "partials" in caplog.text and "WARNING" not in caplog.text
+
+
+def test_plot_info_prune_and_config(tmp_path: Path, demo_wav: Path, caplog: pytest.LogCaptureFixture) -> None:
+    pytest.importorskip("matplotlib")
+    import json
+
+    out = tmp_path / "demo.parquet"
+    main(["analyze", str(demo_wav), "-o", str(out), "--prune", "5"])
+    assert read(out).track_lengths().min() >= 5
+
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"analysis": {"window_length": 1023, "threshold_db": -40}, "tracking": {"delta": 0.5}}))
+    configured = tmp_path / "configured.parquet"
+    main(["analyze", str(demo_wav), "-o", str(configured), "--config", str(settings)])
+    assert read(configured).grid.window_length == 1023
+
+    figure = tmp_path / "fig.png"
+    main(["plot", str(out), "-o", str(figure), "--audio", str(demo_wav), "--max-freq", "5000"])
+    assert figure.stat().st_size > 0
+
+    with caplog.at_level(logging.INFO, logger="fast_partial_tracking.cli"):
+        main(["info", str(out)])
+    assert "length (frames)" in caplog.text and "settings" in caplog.text
+
+
+def test_streaming_file_analysis_matches_batch(tmp_path: Path, demo_wav: Path) -> None:
+    batch, stream = tmp_path / "batch.parquet", tmp_path / "stream.parquet"
+    main(["analyze", str(demo_wav), "-o", str(batch)])
+    main(["analyze", str(demo_wav), "-o", str(stream), "--stream", "--block-size", "777"])
+    a, b = read(batch), read(stream)
+    np.testing.assert_array_equal(a.track_id, b.track_id)
+    np.testing.assert_array_equal(a.omega, b.omega)

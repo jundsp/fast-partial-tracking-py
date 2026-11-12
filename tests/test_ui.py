@@ -52,3 +52,6 @@ def test_figures() -> None:
     assert fig.data[0].type == "heatmap" and len(fig.data) > 1
     assert figures.length_histogram(partials).data
     assert len(figures.waveform_figure(x, x, fs).data) == 3
+    combined = figures.overview_figure(partials, x, x, max_frequency_hz=4000)
+    assert combined.layout.xaxis.matches == "x2" or combined.layout.xaxis2.matches == "x"
+    assert {trace.xaxis for trace in combined.data} == {"x", "x2"}

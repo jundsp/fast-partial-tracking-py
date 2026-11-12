@@ -118,9 +118,8 @@ def overview_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int) 
     max_freq = left.slider("Max frequency (Hz)", 500, fs // 2, min(5000, fs // 2), 100)
     color_by = right.radio("Color", ["track", "amplitude"], horizontal=True,
                            format_func=lambda c: "by partial" if c == "track" else "by level")
-    figure = figures.partials_figure(partials, x, max_frequency_hz=max_freq, color_by=color_by)
+    figure = figures.overview_figure(partials, x, y, max_frequency_hz=max_freq, color_by=color_by)
     st.plotly_chart(figure, use_container_width=True)
-    st.plotly_chart(figures.waveform_figure(x, y, fs), use_container_width=True)
 
 
 def listen_tab(partials: fpt.Partials, x: np.ndarray, y: np.ndarray, fs: int) -> None:

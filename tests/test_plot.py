@@ -42,3 +42,14 @@ def test_overview_and_method(tmp_path: Path, signal_and_partials) -> None:
     ax = partials.plot(audio=x, max_frequency_hz=4000)
     assert ax.get_ylim()[1] == 4000
     plt.close("all")
+
+
+@pytest.mark.parametrize("color_by", ["track", "amplitude"])
+def test_overview_panels_share_width(signal_and_partials, color_by: str) -> None:
+    x, partials = signal_and_partials
+    fig = plot.overview(partials, x, color_by=color_by)
+    fig.canvas.draw()
+    wave, tf = fig.axes[0].get_position(), fig.axes[1].get_position()
+    assert wave.x0 == pytest.approx(tf.x0, abs=1e-3) and wave.x1 == pytest.approx(tf.x1, abs=1e-3)
+    assert fig.axes[0].get_xlim() == fig.axes[1].get_xlim()
+    plt.close("all")

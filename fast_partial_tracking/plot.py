@@ -245,9 +245,13 @@ def overview(
     resynthesis: np.ndarray | None = None,
     max_frequency_hz: float | None = 5000.0,
     min_frames: int = 3,
+    color_by: ColorBy = "track",
     out_path: str | Path | None = None,
 ) -> Figure:
     """Input and resynthesis waveforms above the partials drawn over the spectrogram.
+
+    Both panels share one time axis and always have the same width: when coloring by
+    amplitude, the colorbar takes room from both panels, not only the partials.
 
     Args:
         partials: Tracking result.
@@ -255,6 +259,7 @@ def overview(
         resynthesis: Resynthesized signal (computed if None).
         max_frequency_hz: Upper frequency limit of the partials plot.
         min_frames: Hide partials shorter than this in the partials panel.
+        color_by: See ``partials``.
         out_path: If given, the figure is saved there.
 
     Returns:
@@ -267,14 +272,20 @@ def overview(
     y = synthesize(partials) if resynthesis is None else resynthesis
     t = np.arange(audio.size) / partials.grid.fs
     with style():
-        fig, (ax_wave, ax_tf) = plt.subplots(2, 1, figsize=(7.2, 6.4), height_ratios=[1, 3], sharex=True)
+        fig, (ax_wave, ax_tf) = plt.subplots(
+            2, 1, figsize=(7.2, 6.4), height_ratios=[1, 3], sharex=True, layout="constrained"
+        )
         ax_wave.plot(t, audio, color="0.15", lw=0.6, label="Input")
         ax_wave.plot(t, y, color="#ff1a1a", lw=0.6, alpha=0.75, label="Resynthesis")
         ax_wave.legend(loc="upper right", fontsize=9, frameon=False, ncols=2)
         ax_wave.set_ylabel("Amplitude")
         ax_wave.set_title(f"R-SNR {rsnr(audio, y):.1f} dB, {partials.num_tracks} partials", fontsize=12)
-        _draw_partials(partials, ax=ax_tf, audio=audio, max_frequency_hz=max_frequency_hz, min_frames=min_frames)
-        fig.tight_layout()
+        _draw_partials(partials, ax=ax_tf, audio=audio, max_frequency_hz=max_frequency_hz, min_frames=min_frames,
+                       color_by=color_by, colorbar=False)
+        ax_wave.set_xlim(ax_tf.get_xlim())
+        if color_by == "amplitude":
+            fig.colorbar(ax_tf.collections[-1], ax=[ax_wave, ax_tf], label="Amplitude (dB)", shrink=0.75,
+                         anchor=(0.0, 0.0))
         if out_path is not None:
             Path(out_path).parent.mkdir(parents=True, exist_ok=True)
             fig.savefig(out_path)

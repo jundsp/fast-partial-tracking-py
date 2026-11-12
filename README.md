@@ -231,9 +231,12 @@ Outputs go to `~/Documents/output/fast-partial-tracking/examples/<name>/` (overr
 uv run python examples/live_microphone.py --seconds 20
 ```
 
-Tracks your default input device in real time and draws the partials in a scrolling plot.
-macOS asks for microphone permission for your terminal on first use (System Settings →
-Privacy & Security → Microphone). Add `--simulate` to replay the demo voice instead.
+Tracks your default input device in real time and draws the partials as a scrolling
+image. The title shows the lag (audio waiting to be processed); it stays around one block
+(~25 ms) when the machine keeps up, and a warning is logged if it passes 0.5 s. Lower
+`--fps` if the display is slow on your machine. macOS asks for microphone permission for
+your terminal on first use (System Settings → Privacy & Security → Microphone). Add
+`--simulate` to replay the demo voice at real-time pace instead.
 
 ## Development
 

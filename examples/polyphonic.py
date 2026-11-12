@@ -33,7 +33,7 @@ def plot_cases(results: dict[str, fpt.Partials], out_path: Path) -> None:
     """
     fig, axes = plt.subplots(1, len(results), figsize=(6 * len(results), 4))
     for ax, (name, partials) in zip(axes, results.items()):
-        fpt.plot.partials(partials, ax=ax, color_by="track", cmap="tab20", max_frequency_hz=3000, linewidth=1.5)
+        fpt.plot.partials(partials, ax=ax, max_frequency_hz=3000)
         ax.set_title(f"{name}: {partials.num_tracks} partials")
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,6 +47,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    fpt.plot.use_style()
 
     results = {}
     for name in ["chord", "crossing"]:

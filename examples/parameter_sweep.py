@@ -69,6 +69,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    fpt.plot.use_style()
 
     x, fs = fpt.data.synthetic("vibrato", duration=1.0, noise_db=-40)
     analysis = fpt.AnalysisConfig(window_length=1023)

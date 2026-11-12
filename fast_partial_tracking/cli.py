@@ -166,18 +166,15 @@ def describe(partials: Partials, name: str = "") -> list[str]:
 
 def cmd_plot(args: argparse.Namespace) -> None:
     """Plots a partials file (optionally over the audio's spectrogram) to an image."""
-    from fast_partial_tracking.plot import _pyplot
-    from fast_partial_tracking.plot import partials as plot_partials
+    from fast_partial_tracking.plot import figure
 
-    plt = _pyplot()
     partials = read(args.input)
     audio = None
     if args.audio:
         audio, _ = sf.read(str(args.audio), always_2d=True)
         audio = audio[:, 0]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    plot_partials(partials, ax=ax, audio=audio, color_by=args.color_by, max_frequency_hz=args.max_freq)
-    fig.tight_layout()
+    fig = figure(partials, audio=audio, max_frequency_hz=args.max_freq, min_frames=args.min_frames,
+                 color_by=args.color_by)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output, dpi=args.dpi)
     log.info(f"figure -> {args.output}")
@@ -232,7 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
     plot.add_argument("input", type=Path)
     plot.add_argument("-o", "--output", type=Path, required=True, help="image file, e.g. .png or .pdf")
     plot.add_argument("--audio", type=Path, help="draw this audio's spectrogram underneath")
-    plot.add_argument("--color-by", choices=["amplitude", "track", "none"], default="amplitude")
+    plot.add_argument("--color-by", choices=["track", "amplitude", "none"], default="track")
+    plot.add_argument("--min-frames", type=int, default=3, help="hide partials shorter than this")
     plot.add_argument("--max-freq", type=float, default=None, help="upper frequency limit in Hz")
     plot.add_argument("--dpi", type=int, default=150)
     plot.set_defaults(func=cmd_plot)

@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    fpt.plot.use_style()
 
     x, fs = fpt.data.demo_sound()
     partials = fpt.track(x, fs)  # default settings: 46 ms Blackman-Harris window, Q = 2

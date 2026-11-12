@@ -12,7 +12,7 @@ app and about 5× faster tracking. Exact MATLAB results remain available through
 - **Transforms**: `fpt.transforms.pitch_shift`, `time_stretch` and `gain`.
 - **Synthesis**: phase-integrating synthesis via `PhaseIntegratingSynthesizer` and `synthesize(phase="integrated")`. Transformed results use it automatically.
 - **Streaming**: `PartialTracker.process(blocks)`.
-- **Plotting**: `fpt.plot` (`spectrogram`, `partials`, `overview`) and `Partials.plot()`.
+- **Plotting**: `fpt.plot` in the style of the original MATLAB figures: each partial in its own saturated color over a light, smooth spectrogram, with serif (Computer Modern) type. `figure` (single publication panel), `overview`, `partials`, `spectrogram`, the `style()` / `use_style()` helpers, and `Partials.plot()`. The web app and `fpt plot` use the same look.
 - **Example audio**: `fpt.data` provides the bundled demo voice and synthetic test signals.
 - **Web app**: `fpt ui`, an interactive Streamlit app.
 - **Command line**: `fpt plot`, `fpt ui`, a richer `fpt info`, and `analyze --preset/--config/--prune`. Streaming file analysis now uses the signal-relative threshold.

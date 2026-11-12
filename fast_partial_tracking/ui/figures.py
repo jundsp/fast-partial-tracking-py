@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from fast_partial_tracking.partials import Partials
+from fast_partial_tracking.plot import PALETTE
 
 _MAX_COLUMNS = 700
 _AMPLITUDE_BANDS = 6
@@ -38,43 +39,49 @@ def spectrogram_trace(audio: np.ndarray, fs: float, max_frequency_hz: float, flo
     level = 20 * np.log10(magnitude[keep][:, ::step] + 1e-12)
     return _go().Heatmap(
         x=times[::step], y=freqs[keep], z=level, zmin=level.max() - floor_db, zmax=level.max(),
-        colorscale="Greys", showscale=False, hoverinfo="skip",
+        colorscale=[[0.0, "#7a7a7a"], [0.5, "#bdbdbd"], [1.0, "#ffffff"]], showscale=False, hoverinfo="skip",
     )
 
 
-def partial_traces(partials: Partials, dynamic_range_db: float = 80.0, colorscale: str = "Plasma") -> list[Any]:
-    """Line traces of all partials, grouped into amplitude bands (one color per band).
+def partial_traces(
+    partials: Partials, color_by: str = "track", dynamic_range_db: float = 80.0, colorscale: str = "Plasma"
+) -> list[Any]:
+    """Line traces of all partials, one WebGL trace per color.
 
-    Each partial is drawn as one polyline; partials are separated by gaps so a band needs a
-    single WebGL trace. Hovering shows the partial label, frequency and level.
+    Partials are drawn as polylines separated by gaps, so each color group needs a single
+    trace. ``color_by="track"`` cycles the saturated palette of ``fpt.plot`` so neighbouring
+    partials differ; ``"amplitude"`` groups partials into level bands. Hovering shows the
+    partial label, frequency and level.
     """
-    from plotly.colors import sample_colorscale
-
-    go = _go()
     if len(partials) == 0:
         return []
+    order = np.lexsort((partials.frame, partials.track_id))
+    if color_by == "track":
+        group = np.arange(max(partials.num_tracks, 1)) % len(PALETTE)
+        return [_trace(partials, order, group, g, PALETTE[g], None) for g in range(len(PALETTE))
+                if np.any(group[partials.track_id] == g)]
+    from plotly.colors import sample_colorscale
+
     level = partials.amplitude_db
     top = level.max()
     track_level = np.full(max(partials.num_tracks, 1), -np.inf)
     np.maximum.at(track_level, partials.track_id, level)
     edges = np.linspace(top - dynamic_range_db, top, _AMPLITUDE_BANDS + 1)
-    band = np.clip(np.digitize(track_level, edges) - 1, 0, _AMPLITUDE_BANDS - 1)
+    group = np.clip(np.digitize(track_level, edges) - 1, 0, _AMPLITUDE_BANDS - 1)
     colors = sample_colorscale(colorscale, np.linspace(0.1, 0.95, _AMPLITUDE_BANDS))
-    order = np.lexsort((partials.frame, partials.track_id))
-    traces = []
-    for b in range(_AMPLITUDE_BANDS):
-        rows = order[band[partials.track_id[order]] == b]
-        if rows.size == 0:
-            continue
-        x, y, custom = _polylines(partials, rows)
-        traces.append(
-            go.Scattergl(
-                x=x, y=y, customdata=custom, mode="lines", line={"color": colors[b], "width": 1.5},
-                name=f"{edges[b]:.0f} to {edges[b + 1]:.0f} dB",
-                hovertemplate="partial %{customdata[0]}<br>%{x:.3f} s<br>%{y:.1f} Hz<br>%{customdata[1]:.1f} dB<extra></extra>",
-            )
-        )
-    return traces
+    return [_trace(partials, order, group, b, colors[b], f"{edges[b]:.0f} to {edges[b + 1]:.0f} dB")
+            for b in range(_AMPLITUDE_BANDS) if np.any(group[partials.track_id] == b)]
+
+
+def _trace(partials: Partials, order: np.ndarray, group: np.ndarray, value: int, color: str, name: str | None) -> Any:
+    """One polyline trace for the partials whose group equals ``value``."""
+    rows = order[group[partials.track_id[order]] == value]
+    x, y, custom = _polylines(partials, rows)
+    return _go().Scattergl(
+        x=x, y=y, customdata=custom, mode="lines", line={"color": color, "width": 2},
+        name=name or "", showlegend=name is not None,
+        hovertemplate="partial %{customdata[0]}<br>%{x:.3f} s<br>%{y:.1f} Hz<br>%{customdata[1]:.1f} dB<extra></extra>",
+    )
 
 
 def _polylines(partials: Partials, rows: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -92,21 +99,24 @@ def partials_figure(
     audio: np.ndarray | None = None,
     max_frequency_hz: float | None = None,
     height: int = 520,
+    color_by: str = "track",
 ) -> Any:
-    """Partials over the spectrogram, zoomable, with hover details."""
+    """Partials over a light spectrogram, zoomable, with hover details."""
     go = _go()
     fs = partials.grid.fs
     max_frequency_hz = max_frequency_hz or fs / 2
     fig = go.Figure()
     if audio is not None:
         fig.add_trace(spectrogram_trace(audio, fs, max_frequency_hz))
-    for trace in partial_traces(partials):
+    for trace in partial_traces(partials, color_by=color_by):
         fig.add_trace(trace)
     fig.update_layout(
-        height=height, margin={"l": 60, "r": 20, "t": 30, "b": 50},
-        xaxis_title="time (s)", yaxis_title="frequency (Hz)",
-        yaxis_range=[0, max_frequency_hz], legend={"title": "partial level", "orientation": "h", "y": 1.08},
-        plot_bgcolor="white",
+        height=height, margin={"l": 70, "r": 20, "t": 30, "b": 50},
+        xaxis_title="Time (s)", yaxis_title="Frequency (Hz)",
+        yaxis={"range": [0, max_frequency_hz], "tickformat": ",d"},
+        xaxis={"range": [0, (partials.grid.signal_length or 0) / fs]},
+        legend={"title": "partial level", "orientation": "h", "y": 1.08},
+        plot_bgcolor="white", font={"family": "Latin Modern Roman, CMU Serif, Georgia, serif", "size": 14},
     )
     return fig
 

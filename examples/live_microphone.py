@@ -161,6 +161,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    fpt.plot.use_style()
 
     fs = 44100 if args.simulate else args.fs
     # A live input cannot know its loudest frame in advance: threshold relative to full scale.

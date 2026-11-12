@@ -18,6 +18,8 @@ exactly, and tests check this against reference data exported from MATLAB.
 
 ![Partials of a voice recording drawn over its spectrogram](docs/assets/demo_partials.png)
 
+*Partials of the bundled voice recording (/kara/), each in its own color, over the spectrogram (`fpt.plot.figure(fpt.track(x, fs, fpt.AnalysisConfig(threshold_db=-50)), x)`).*
+
 ## Install
 
 ```sh
@@ -58,7 +60,7 @@ partials = fpt.track(x, fs)            # Partials(1131 partials, 86 frames, ...)
 y = fpt.synthesize(partials)
 fpt.rsnr(x, y)                         # 22.5 dB reconstruction SNR (eq. 18)
 
-partials.plot(audio=x)                 # partials over the spectrogram
+fpt.plot.figure(partials, x, out_path="voice.png")  # the figure above
 partials.save("voice.parquet")         # or .arrows / .sdif / .bin
 ```
 

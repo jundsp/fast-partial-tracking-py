@@ -48,6 +48,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    fpt.plot.use_style()
 
     audio, fs = sf.read(args.audio, always_2d=True)
     partials = fpt.track(audio[:, 0], fs).prune(3)

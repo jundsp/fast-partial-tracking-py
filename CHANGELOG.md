@@ -1,10 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Added
-- `fast_partial_tracking.__version__` and `fpt --version`.
-
 ## 0.2.0
 
 A redesign for Python: explicit settings, a partials toolkit, transforms, plotting, a web
@@ -23,6 +18,7 @@ app and about 5× faster tracking. Exact MATLAB results remain available through
 - **Command line**: `fpt plot`, `fpt ui`, a richer `fpt info`, and `analyze --preset/--config/--prune`. Streaming file analysis now uses the signal-relative threshold.
 - **Examples gallery**: 11 runnable examples, all exercised by the test suite.
 - **Dependencies**: numexpr (DDM speed-up) and matplotlib (plotting) install by default. Extras `ui`, `dataframes`, `live`, and `all` for everything. `dev` includes every optional feature, so `uv sync --extra dev` is the one setup command for a clone.
+- **Version**: `fast_partial_tracking.__version__` and `fpt --version`.
 
 ### Changed
 - **Package layout**: organized by processing stage into `analysis/`, `tracking/`, `synthesis/` and `compat/`.

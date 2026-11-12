@@ -76,4 +76,10 @@ def assignment_costs(
     useful_cost = 1.0 - np.exp(-(delta_f**2) / var_f - delta_a**2 / var_a)  # eq. (8)
     spurious_cost = 1.0 - (1.0 - delta) * useful_cost  # eq. (9)
     useful = useful_cost < spurious_cost
-    return np.where(useful, useful_cost, spurious_cost), useful  # eq. (14)
+    cost = np.where(useful, useful_cost, spurious_cost)  # eq. (14)
+    # Degenerate estimates (inf/nan parameters) must not reach the solver: treat as spurious.
+    invalid = ~np.isfinite(cost)
+    if np.any(invalid):
+        cost[invalid] = 1.0
+        useful &= ~invalid
+    return cost, useful

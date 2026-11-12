@@ -9,15 +9,13 @@ frequency.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
 
 import numpy as np
 
 from fast_partial_tracking.compat.matlab import matlab_round
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.tracking.labeling import SetMatch, match_sets
-from fast_partial_tracking.partials import Frame, Partials
+from fast_partial_tracking.partials import Frame
+from fast_partial_tracking.synthesis.segments import Segments, hop_segments
 
 
 def cubic_phase_segments(
@@ -57,85 +55,12 @@ def cubic_phase_segments(
     return (2.0 * envelope * np.cos(theta))[:, :hop]
 
 
-@dataclass(frozen=True)
-class Segments:
-    """Endpoint parameters of sinusoid segments spanning one hop.
-
-    Attributes:
-        omega: Start/end angular frequencies (radians/sample), shape (P, 2).
-        amplitude: Start/end linear amplitudes of the complex model, shape (P, 2).
-        phase: Start/end phases, shape (P, 2).
-    """
-
-    omega: np.ndarray
-    amplitude: np.ndarray
-    phase: np.ndarray
-
-    def __len__(self) -> int:
-        return int(self.omega.shape[0])
-
-    @classmethod
-    def concat(cls, parts: list[Segments]) -> Segments:
-        return cls(*(np.concatenate(columns) for columns in zip(*((p.omega, p.amplitude, p.phase) for p in parts))))
-
-    def render(self, hop: int) -> np.ndarray:
-        """Sum of all segments, ``hop`` samples."""
-        return cubic_phase_segments(self.omega, self.amplitude, self.phase, hop).sum(axis=0)
-
-
-def _fade_in(frame: Frame, rows: np.ndarray, hop: int) -> Segments:
-    """Partials born at ``frame``: fade in over the preceding hop at constant frequency."""
-    w, ph = frame.omega[rows], frame.phase[rows]
-    return Segments(
-        np.stack([w, w], axis=1),
-        np.stack([np.zeros_like(w), np.exp(frame.log_amplitude[rows])], axis=1),
-        np.stack([ph - w * hop, ph], axis=1),
-    )
-
-
-def _fade_out(frame: Frame, rows: np.ndarray, hop: int) -> Segments:
-    """Partials ending at ``frame``: fade out over the following hop at constant frequency."""
-    w, ph = frame.omega[rows], frame.phase[rows]
-    return Segments(
-        np.stack([w, w], axis=1),
-        np.stack([np.exp(frame.log_amplitude[rows]), np.zeros_like(w)], axis=1),
-        np.stack([ph, ph + w * hop], axis=1),
-    )
-
-
-def _continue(prev: Frame, prev_rows: np.ndarray, curr: Frame, curr_rows: np.ndarray) -> Segments:
-    """Partials present in both frames: interpolate between their parameters."""
-    return Segments(
-        np.stack([prev.omega[prev_rows], curr.omega[curr_rows]], axis=1),
-        np.stack([np.exp(prev.log_amplitude[prev_rows]), np.exp(curr.log_amplitude[curr_rows])], axis=1),
-        np.stack([prev.phase[prev_rows], curr.phase[curr_rows]], axis=1),
-    )
-
-
-def hop_segments(prev: Frame | None, curr: Frame, hop: int) -> Segments | None:
-    """All segments of the hop ending at ``curr``, or None if nothing sounds.
-
-    Order follows jun_synthesize_partials.m: births (fade in), deaths (fade out), then
-    continuations.
-    """
-    none = np.zeros(0, np.intp)
-    if prev is None or len(prev) == 0:
-        match = SetMatch(none, none, none, np.arange(len(curr)))
-    else:
-        match = match_sets(prev.track_id, curr.track_id)
-    parts = [_fade_in(curr, match.unmatched_b, hop)]
-    if prev is not None:
-        parts += [_fade_out(prev, match.unmatched_a, hop), _continue(prev, match.a, curr, match.b)]
-    segments = Segments.concat(parts)
-    return segments if len(segments) else None
-
-
 class Synthesizer:
-    """Streaming McAulay-Quatieri synthesizer.
+    """Streaming McAulay-Quatieri synthesizer (measured phases, cubic interpolation).
 
     Feed frames in order with ``push``; each call returns the output samples between the
     previous frame's origin and this one's, so output can be played or written while the
-    analysis is still running.
+    analysis is still running. Subclasses change how a hop is rendered (``_render``).
 
     Args:
         grid: Frame geometry of the analysis (the padded time axis).
@@ -168,7 +93,11 @@ class Synthesizer:
             return np.zeros(0)
 
         segments = hop_segments(prev, frame, hop)
-        return np.zeros(hop) if segments is None else segments.render(hop)
+        return np.zeros(hop) if segments is None else self._render(segments, hop, frame)
+
+    def _render(self, segments: Segments, hop: int, frame: Frame) -> np.ndarray:
+        """Sum of all segments of one hop (MQ eqs. 34-37)."""
+        return cubic_phase_segments(segments.omega, segments.amplitude, segments.phase, hop).sum(axis=0)
 
     def finish(self, padded_length: int) -> np.ndarray:
         """Returns the silent tail after the last frame origin.
@@ -182,37 +111,3 @@ class Synthesizer:
         tail = max(padded_length - self._position, 0)
         self._position += tail
         return np.zeros(tail)
-
-
-def synthesize_frames(frames: Iterable[Frame], grid: FrameGrid, trim: bool = True) -> np.ndarray:
-    """Synthesizes a sequence of frames.
-
-    Args:
-        frames: All frames 0..M-1 in order.
-        grid: Completed frame geometry.
-        trim: If True, removes the analysis zero padding so the output aligns with the
-            input signal (length L). Otherwise returns the padded signal.
-
-    Returns:
-        The resynthesized signal.
-    """
-    synth = Synthesizer(grid)
-    blocks = [synth.push(frame) for frame in frames]
-    blocks.append(synth.finish(grid.padded_length))
-    out = np.concatenate(blocks)
-    if trim:
-        out = out[grid.pad_front : grid.pad_front + grid.signal_length]
-    return out
-
-
-def synthesize(partials: Partials, trim: bool = True) -> np.ndarray:
-    """Resynthesizes a tracking result.
-
-    Args:
-        partials: Tracked partials.
-        trim: If True, removes the analysis zero padding (output length L).
-
-    Returns:
-        The resynthesized signal.
-    """
-    return synthesize_frames(partials.frames(), partials.grid, trim=trim)

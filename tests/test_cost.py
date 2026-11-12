@@ -81,3 +81,13 @@ def test_crossover_is_at_zeta(delta: float) -> None:
     for offset, expect_useful in [(-1e-9, True), (1e-9, False)]:
         _, useful = assignment_costs(zeros, zeros, np.array([a_zeta + offset]), zeros, var_f, var_a, delta)
         assert bool(useful[0, 0]) is expect_useful
+
+
+def test_non_finite_parameters_are_spurious() -> None:
+    var_f, var_a = cost_variances(TrackingConfig())
+    freq = np.array([100.0, np.nan, np.inf])
+    cost, useful = assignment_costs(np.zeros(3), freq, np.zeros(2), np.array([100.0, 200.0]), var_f, var_a, 0.2)
+    assert np.all(np.isfinite(cost))
+    assert useful[0, 0] and not useful[1:].any()
+    np.testing.assert_array_equal(cost[1], 1.0)  # nan: replaced
+    np.testing.assert_allclose(cost[2], 0.2)  # inf difference: a regular spurious cost B = delta

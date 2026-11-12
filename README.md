@@ -77,11 +77,11 @@ Without a file it opens the demo voice; synthetic test signals and file upload a
 sidebar. It can also open a partials file (`.parquet`, `.arrows`, `.sdif` or `.bin`) without
 any audio, to view, select, play, transform and export it.
 
-![The web app: settings in the sidebar, selection and display tools at the top, and the waveform above the partials, with a lasso selection of the voice's lower harmonics highlighted and the rest in grey](docs/assets/web_app_selection.png)
+![The web app: settings in the sidebar, selection and display tools at the top, and the waveform above the partials, every partial drawn, with a lasso selection of the voice's lower harmonics in front and the rest faded](docs/assets/web_app_all_partials.png)
 
 - **Settings:** tune the window, hop, Q, threshold, maximum partials per frame, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
 - **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level. The frequency axis can be linear, logarithmic or labelled with note names, and lines can be weighted by level so quiet partials fade out.
-- **Select:** click partials, or drag a box or lasso over them, to replace, add to or remove from the selection. You can also select by rule (time, frequency, level, length) or select the harmonics of a fundamental. Unselected partials are drawn in grey.
+- **Select:** click partials, or drag a box or lasso over them, to replace, add to or remove from the selection. You can also select by rule (time, frequency, level, length) or select the harmonics of a fundamental. Unselected partials stay visible, thinner and faded.
 - **Inspect:** the selected partials are listed with start, end, length, mean frequency, nearest note and peak level; pick one to plot its frequency and level over time, or play the selection.
 - **Listen:** play the original, the resynthesis and the residual, or play all or only the selected partials between two times, looped and at a slower or faster speed (the pitch stays the same).
 - **Transform:** pitch shift, time stretch or change the gain of all or only the selected partials and hear the result immediately.

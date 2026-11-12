@@ -88,11 +88,15 @@ def test_selection_traces_and_point_mapping() -> None:
     partials = track(x, fs, AnalysisConfig(window_length=511))
     picked = np.array([0, 3])
     fig = figures.partials_figure(partials, x, max_frequency_hz=4000, selected=picked)
+    ids = lambda traces: {int(v) for t in traces for v in t.customdata[:, 0] if np.isfinite(v)}  # noqa: E731
     background = [t for t in fig.data if t.name == "not selected"]
-    assert len(background) == 1
-    coloured_ids = {int(v) for t in fig.data if t.meta and t.name != "not selected"
-                    for v in t.customdata[:, 0] if np.isfinite(v)}
-    assert coloured_ids == {0, 3}
+    foreground = [t for t in fig.data if t.meta and t.name != "not selected"]
+    # Every partial is still drawn: the selection in front, the rest faded behind it.
+    assert ids(foreground) == {0, 3}
+    assert ids(background) | ids(foreground) == set(range(partials.num_tracks))
+    assert max(t.opacity for t in background) < min(t.opacity for t in foreground)
+    assert sum(t.showlegend for t in background) == 1
+    assert min(t.line.width for t in foreground) > max(t.line.width for t in background)
     curve = next(i for i, t in enumerate(fig.data) if t.meta and t.name != "not selected")
     index = int(np.flatnonzero(np.isfinite(fig.data[curve].customdata[:, 0]))[0])
     points = [{"curve_number": curve, "point_index": index}, {"curve_number": 0, "point_index": 0}]

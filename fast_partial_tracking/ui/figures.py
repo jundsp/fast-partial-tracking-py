@@ -11,7 +11,8 @@ from fast_partial_tracking.plot import PALETTE
 
 _MAX_COLUMNS = 700
 _AMPLITUDE_BANDS = 6
-_UNSELECTED = "rgba(40, 40, 40, 0.35)"
+_UNSELECTED_OPACITY = 0.6
+_SELECTED_EXTRA_WIDTH = 1.0
 # (line width, opacity) for quiet, medium and loud partials; loud is the default weight.
 _WEIGHTS = ((0.8, 0.4), (1.4, 0.7), (2.2, 1.0))
 LOG_MIN_HZ = 20.0
@@ -76,8 +77,8 @@ def partial_traces(
         color_by: ``"track"`` or ``"amplitude"``.
         dynamic_range_db: Level range spanned by the amplitude bands.
         colorscale: Plotly colorscale of the amplitude bands.
-        selected: Labels of selected partials. When given and not empty, the other
-            partials are drawn thin and grey behind the selected ones.
+        selected: Labels of selected partials. When given and not empty, the selected
+            partials are drawn thicker and the others thin and faded behind them.
         weight_by_level: Draw loud partials thick and opaque and quiet ones thin and faint.
             Plotly sets one width per trace, so partials are sorted into three weights by
             their peak level (within 20 dB of the loudest, within 40 dB, quieter).
@@ -93,13 +94,11 @@ def partial_traces(
     if weight_by_level:
         weight = np.digitize(track_level, [top - 40.0, top - 20.0])
     is_selected = np.ones(n, dtype=bool)
-    traces = []
+    emphasis = 0.0
     if selected is not None and len(selected):
         is_selected = np.zeros(n, dtype=bool)
         is_selected[np.asarray(selected, dtype=np.int64)] = True
-        background = np.where(is_selected, -1, 0)
-        if not is_selected.all():
-            traces.append(_trace(partials, order, background, 0, _UNSELECTED, "not selected", width=1.0))
+        emphasis = _SELECTED_EXTRA_WIDTH
     if color_by == "track":
         color = np.arange(n) % len(PALETTE)
         palette = list(PALETTE)
@@ -111,6 +110,17 @@ def partial_traces(
         color = np.clip(np.digitize(track_level, edges) - 1, 0, _AMPLITUDE_BANDS - 1)
         palette = sample_colorscale(colorscale, np.linspace(0.1, 0.95, _AMPLITUDE_BANDS))
         names = [f"{edges[b]:.0f} to {edges[b + 1]:.0f} dB" for b in range(_AMPLITUDE_BANDS)]
+    traces = []
+    # Unselected partials keep their colors but are drawn thin and faded, behind the selection.
+    if not is_selected.all():
+        background = np.where(is_selected, -1, color)
+        present = set(np.unique(background[partials.track_id]).tolist())
+        first = True
+        for c, hue in enumerate(palette):
+            if c in present:
+                traces.append(_trace(partials, order, background, c, hue, "not selected", width=1.3,
+                                     opacity=_UNSELECTED_OPACITY, showlegend=first))
+                first = False
     group = np.where(is_selected, color * len(_WEIGHTS) + weight, -1)
     present = set(np.unique(group[partials.track_id]).tolist())
     for c, (hue, name) in enumerate(zip(palette, names)):
@@ -119,7 +129,7 @@ def partial_traces(
             if c * len(_WEIGHTS) + w not in present:
                 continue
             width, opacity = _WEIGHTS[w]
-            traces.append(_trace(partials, order, group, c * len(_WEIGHTS) + w, hue, name, width=width,
+            traces.append(_trace(partials, order, group, c * len(_WEIGHTS) + w, hue, name, width=width + emphasis,
                                  opacity=opacity, showlegend=name is not None and not shown))
             shown = True
     return traces

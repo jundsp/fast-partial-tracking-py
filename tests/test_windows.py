@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_partial_tracking.windows import blackman_harris, get_window, hann
+from fast_partial_tracking.analysis.windows import blackman_harris, get_window, hann
 
 from .conftest import load_mat
 

@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_partial_tracking.assignment import useful_assignments
+from fast_partial_tracking.tracking.assignment import useful_assignments
 from fast_partial_tracking.config import TrackingConfig
-from fast_partial_tracking.cost import assignment_costs, cost_variances, midpoint_parameters
-from fast_partial_tracking.ddm import DdmEstimator
+from fast_partial_tracking.tracking.cost import assignment_costs, cost_variances, midpoint_parameters
+from fast_partial_tracking.analysis.ddm import DdmEstimator
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.tracker import reference_level_db
+from fast_partial_tracking.tracking.tracker import reference_level_db
 
 from .conftest import MatlabCase
 

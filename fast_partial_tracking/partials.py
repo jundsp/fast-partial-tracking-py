@@ -22,13 +22,16 @@ from fast_partial_tracking.framing import FrameGrid
 class Frame:
     """Partials active in one analysis frame, evaluated at the frame origin n = 0.
 
+    Parameters are stored in the model's native units (eqs. 5-7) so no precision is lost;
+    use ``frequency_hz``, ``amplitude`` and ``amplitude_db`` for physical units.
+
     Attributes:
         index: 0-based frame number k.
         center: Index of the frame origin in the zero-padded signal.
         time_s: Time of the frame origin in seconds, relative to the first input sample.
+        fs: Sampling rate in Hz.
         omega: Angular frequency in radians/sample, shape (R,).
-        log_amp: Natural log of the complex amplitude, shape (R,). The real sinusoid's
-            amplitude is ``2 * exp(log_amp)`` (the model of eq. 1 is analytic).
+        log_amplitude: Natural log of the complex (analytic) amplitude, shape (R,).
         phase: Phase in radians (not wrapped), shape (R,).
         track_id: 0-based partial label (Section 3.6), shape (R,).
         alpha: Full short-term model coefficients (eq. 4), shape (R, Q + 1), or None.
@@ -37,8 +40,9 @@ class Frame:
     index: int
     center: int
     time_s: float
+    fs: float
     omega: np.ndarray
-    log_amp: np.ndarray
+    log_amplitude: np.ndarray
     phase: np.ndarray
     track_id: np.ndarray
     alpha: np.ndarray | None = None
@@ -46,14 +50,20 @@ class Frame:
     def __len__(self) -> int:
         return int(self.omega.size)
 
-    def frequency_hz(self, fs: float) -> np.ndarray:
+    @property
+    def frequency_hz(self) -> np.ndarray:
         """Frequencies in Hz."""
-        return self.omega * fs / (2.0 * np.pi)
+        return self.omega * self.fs / (2.0 * np.pi)
 
     @property
     def amplitude(self) -> np.ndarray:
-        """Linear amplitude of each real sinusoid, 2 * exp(log_amp)."""
-        return 2.0 * np.exp(self.log_amp)
+        """Linear amplitude of each real sinusoid, 2 * exp(log_amplitude)."""
+        return 2.0 * np.exp(self.log_amplitude)
+
+    @property
+    def amplitude_db(self) -> np.ndarray:
+        """Amplitude in dB (20 log10 of ``amplitude``)."""
+        return 20.0 * np.log10(self.amplitude)
 
 
 @dataclass
@@ -65,7 +75,7 @@ class Partials:
         frame: Frame index of each row, non-decreasing.
         track_id: 0-based partial label of each row.
         omega: Angular frequency (radians/sample) of each row.
-        log_amp: Log complex amplitude of each row.
+        log_amplitude: Natural log of the complex amplitude of each row.
         phase: Phase (radians) of each row.
         alpha: Model coefficients of each row, shape (rows, Q + 1), or None.
         num_tracks: Number of distinct partials (labels are 0..num_tracks-1).
@@ -76,7 +86,7 @@ class Partials:
     frame: np.ndarray
     track_id: np.ndarray
     omega: np.ndarray
-    log_amp: np.ndarray
+    log_amplitude: np.ndarray
     phase: np.ndarray
     alpha: np.ndarray | None = None
     num_tracks: int = 0
@@ -120,7 +130,7 @@ class Partials:
             frame=np.repeat([f.index for f in frames], counts).astype(np.int64),
             track_id=track_id.astype(np.int64),
             omega=_concat([f.omega for f in frames]),
-            log_amp=_concat([f.log_amp for f in frames]),
+            log_amplitude=_concat([f.log_amplitude for f in frames]),
             phase=_concat([f.phase for f in frames]),
             alpha=np.concatenate([f.alpha for f in frames]) if has_alpha else None,
             num_tracks=num_tracks,
@@ -142,8 +152,13 @@ class Partials:
 
     @property
     def amplitude(self) -> np.ndarray:
-        """Linear amplitude of each row's real sinusoid, 2 * exp(log_amp)."""
-        return 2.0 * np.exp(self.log_amp)
+        """Linear amplitude of each row's real sinusoid, 2 * exp(log_amplitude)."""
+        return 2.0 * np.exp(self.log_amplitude)
+
+    @property
+    def amplitude_db(self) -> np.ndarray:
+        """Amplitude of each row in dB."""
+        return 20.0 * np.log10(self.amplitude)
 
     @property
     def time_s(self) -> np.ndarray:
@@ -161,8 +176,9 @@ class Partials:
             index=index,
             center=int(self.grid.center(index)),
             time_s=float(self.grid.time_seconds(index)),
+            fs=self.grid.fs,
             omega=self.omega[rows],
-            log_amp=self.log_amp[rows],
+            log_amplitude=self.log_amplitude[rows],
             phase=self.phase[rows],
             track_id=self.track_id[rows],
             alpha=None if self.alpha is None else self.alpha[rows],

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from fast_partial_tracking.labeling import label_assignments, match_sets
+from fast_partial_tracking.tracking.labeling import label_assignments, match_sets
 
 
 def test_match_sets_orders_like_matlab() -> None:

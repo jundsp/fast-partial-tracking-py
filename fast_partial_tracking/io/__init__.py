@@ -20,7 +20,7 @@ from typing import Any
 from fast_partial_tracking.framing import FrameGrid
 from fast_partial_tracking.io.arrow_stream import ArrowStreamWriter, iter_arrow_stream, read_arrow_stream
 from fast_partial_tracking.io.base import PartialsWriter
-from fast_partial_tracking.io.matlab_bin import MatlabBinWriter, read_matlab_bin
+from fast_partial_tracking.compat.matlab_bin import MatlabBinWriter, read_matlab_bin
 from fast_partial_tracking.io.parquet import ParquetWriter, read_parquet
 from fast_partial_tracking.io.sdif import SdifWriter, iter_sdif, read_sdif_tracks
 from fast_partial_tracking.partials import Partials

@@ -23,7 +23,7 @@ from fast_partial_tracking.partials import Frame, Partials
 
 _HEADER = np.dtype([("num_tracks", "<u4"), ("L", "<u4"), ("fs", "<f8"), ("M", "<u4"), ("pad1", "<u4"), ("pad2", "<u4")])
 _FRAME = np.dtype([("frame", "<u4"), ("time", "<u4"), ("rows", "<u4")])
-_ROW = np.dtype([("omega", "<f8"), ("log_amp", "<f8"), ("phase", "<f8"), ("track", "<u4")])
+_ROW = np.dtype([("omega", "<f8"), ("log_amplitude", "<f8"), ("phase", "<f8"), ("track", "<u4")])
 
 
 class MatlabBinWriter(PartialsWriter):
@@ -61,7 +61,7 @@ class MatlabBinWriter(PartialsWriter):
         head["rows"] = len(frame)
         rows = np.zeros(len(frame), _ROW)
         rows["omega"] = frame.omega
-        rows["log_amp"] = frame.log_amp
+        rows["log_amplitude"] = frame.log_amplitude
         rows["phase"] = frame.phase
         rows["track"] = frame.track_id + 1
         self._file.write(head.tobytes() + rows.tobytes())
@@ -115,7 +115,7 @@ def read_matlab_bin(path: str | Path) -> Partials:
         frame=np.repeat(frames, counts),
         track_id=data["track"].astype(np.int64) - 1,
         omega=data["omega"].astype(float),
-        log_amp=data["log_amp"].astype(float),
+        log_amplitude=data["log_amplitude"].astype(float),
         phase=data["phase"].astype(float),
         num_tracks=int(header["num_tracks"]),
     )

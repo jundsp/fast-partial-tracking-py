@@ -49,7 +49,7 @@ def run_case(ref: dict[str, Any]) -> tuple[fpt.Partials, np.ndarray, dict[str, A
         "partials_python": partials.num_tracks,
         "identical_structure": same,
         "max_omega_error": float(np.max(np.abs(partials.omega - rows[:, 2]))) if same else np.nan,
-        "max_log_amp_error": float(np.max(np.abs(partials.log_amp - rows[:, 3]))) if same else np.nan,
+        "max_log_amp_error": float(np.max(np.abs(partials.log_amplitude - rows[:, 3]))) if same else np.nan,
         "max_output_error": float(np.max(np.abs(y - ref["y"]))),
         "rsnr_matlab": float(ref["rsnr"]),
         "rsnr_python": fpt.rsnr(x, y),

@@ -14,9 +14,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fast_partial_tracking.config import matlab_round
+from fast_partial_tracking.compat.matlab import matlab_round
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.labeling import SetMatch, match_sets
+from fast_partial_tracking.tracking.labeling import SetMatch, match_sets
 from fast_partial_tracking.partials import Frame, Partials
 
 
@@ -88,7 +88,7 @@ def _fade_in(frame: Frame, rows: np.ndarray, hop: int) -> Segments:
     w, ph = frame.omega[rows], frame.phase[rows]
     return Segments(
         np.stack([w, w], axis=1),
-        np.stack([np.zeros_like(w), np.exp(frame.log_amp[rows])], axis=1),
+        np.stack([np.zeros_like(w), np.exp(frame.log_amplitude[rows])], axis=1),
         np.stack([ph - w * hop, ph], axis=1),
     )
 
@@ -98,7 +98,7 @@ def _fade_out(frame: Frame, rows: np.ndarray, hop: int) -> Segments:
     w, ph = frame.omega[rows], frame.phase[rows]
     return Segments(
         np.stack([w, w], axis=1),
-        np.stack([np.exp(frame.log_amp[rows]), np.zeros_like(w)], axis=1),
+        np.stack([np.exp(frame.log_amplitude[rows]), np.zeros_like(w)], axis=1),
         np.stack([ph, ph + w * hop], axis=1),
     )
 
@@ -107,7 +107,7 @@ def _continue(prev: Frame, prev_rows: np.ndarray, curr: Frame, curr_rows: np.nda
     """Partials present in both frames: interpolate between their parameters."""
     return Segments(
         np.stack([prev.omega[prev_rows], curr.omega[curr_rows]], axis=1),
-        np.stack([np.exp(prev.log_amp[prev_rows]), np.exp(curr.log_amp[curr_rows])], axis=1),
+        np.stack([np.exp(prev.log_amplitude[prev_rows]), np.exp(curr.log_amplitude[curr_rows])], axis=1),
         np.stack([prev.phase[prev_rows], curr.phase[curr_rows]], axis=1),
     )
 

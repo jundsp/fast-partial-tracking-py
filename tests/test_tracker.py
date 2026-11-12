@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from fast_partial_tracking import AnalysisConfig, PartialTracker, Partials, TrackingConfig, track
-from fast_partial_tracking.config import matlab_round, nextpow2
-from fast_partial_tracking.tracker import reference_level_db
+from fast_partial_tracking.compat.matlab import matlab_round, nextpow2
+from fast_partial_tracking.tracking.tracker import reference_level_db
 
 from .conftest import MatlabCase, harmonic_signal
 
@@ -26,7 +26,7 @@ def test_streaming_equals_batch(demo_case: MatlabCase, block: int) -> None:
     np.testing.assert_array_equal(streamed.frame, batch.frame)
     np.testing.assert_array_equal(streamed.track_id, batch.track_id)
     np.testing.assert_array_equal(streamed.omega, batch.omega)
-    np.testing.assert_array_equal(streamed.log_amp, batch.log_amp)
+    np.testing.assert_array_equal(streamed.log_amplitude, batch.log_amplitude)
 
 
 def test_frames_are_emitted_with_one_frame_latency() -> None:
@@ -96,7 +96,7 @@ def test_results_do_not_depend_on_worker_count(demo_case: MatlabCase) -> None:
     parallel = track(demo_case.x, demo_case.fs, demo_case.analysis, demo_case.tracking, workers=4)
     np.testing.assert_array_equal(single.track_id, parallel.track_id)
     np.testing.assert_array_equal(single.omega, parallel.omega)
-    np.testing.assert_array_equal(single.log_amp, parallel.log_amp)
+    np.testing.assert_array_equal(single.log_amplitude, parallel.log_amplitude)
 
 
 def test_demo_tracks_quickly(demo_case: MatlabCase) -> None:
@@ -106,3 +106,13 @@ def test_demo_tracks_quickly(demo_case: MatlabCase) -> None:
     start = time.perf_counter()
     track(demo_case.x, demo_case.fs, demo_case.analysis, demo_case.tracking)
     assert time.perf_counter() - start < 1.0
+
+
+def test_process_yields_all_frames() -> None:
+    fs = 16000.0
+    x = harmonic_signal(fs)
+    config = AnalysisConfig(window_length=511, threshold_reference="full_scale")
+    frames = list(PartialTracker(fs, config).process(np.array_split(x, 7)))
+    batch = track(x, fs, config)
+    assert [f.index for f in frames] == list(range(batch.num_frames))
+    np.testing.assert_array_equal(np.concatenate([f.track_id for f in frames]), batch.track_id)

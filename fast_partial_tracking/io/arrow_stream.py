@@ -21,6 +21,7 @@ from fast_partial_tracking.io.table import (
     SUMMARY_KEY,
     batch_to_frames,
     frames_to_batch,
+    grid_from_header,
     schema,
     table_to_partials,
 )
@@ -91,7 +92,7 @@ def iter_arrow_stream(source: str | Path | IO[bytes]) -> Iterator[Frame]:
         Frames in order.
     """
     reader = pa.ipc.open_stream(str(source) if isinstance(source, (str, Path)) else source)
-    grid = FrameGrid(**loads((reader.schema.metadata or {}).get(HEADER_KEY))["grid"])
+    grid = grid_from_header(loads((reader.schema.metadata or {}).get(HEADER_KEY)))
     next_index = 0
     while True:
         try:
@@ -105,7 +106,7 @@ def iter_arrow_stream(source: str | Path | IO[bytes]) -> Iterator[Frame]:
             yield frame
             next_index += 1
         if custom is not None and SUMMARY_KEY in custom:
-            grid = FrameGrid(**loads(custom[SUMMARY_KEY])["grid"])
+            grid = grid_from_header(loads(custom[SUMMARY_KEY]))
             while grid.num_frames is not None and next_index < grid.num_frames:
                 yield _empty(next_index, grid)
                 next_index += 1
@@ -140,8 +141,9 @@ def _empty(index: int, grid: FrameGrid) -> Frame:
         index=index,
         center=int(grid.center(index)),
         time_s=float(grid.time_seconds(index)),
+        fs=grid.fs,
         omega=np.zeros(0),
-        log_amp=np.zeros(0),
+        log_amplitude=np.zeros(0),
         phase=np.zeros(0),
         track_id=np.zeros(0, np.int64),
         alpha=None,

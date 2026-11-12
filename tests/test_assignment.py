@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fast_partial_tracking.assignment import solve_assignment, useful_assignments
+from fast_partial_tracking.tracking.assignment import solve_assignment, useful_assignments
 
 from .conftest import mat_struct, load_mat
 

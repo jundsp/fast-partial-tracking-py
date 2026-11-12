@@ -14,7 +14,7 @@ from fast_partial_tracking.config import AnalysisConfig, TrackingConfig
 from fast_partial_tracking.io import open_writer, read, write
 from fast_partial_tracking.metrics import rsnr
 from fast_partial_tracking.synthesis import synthesize
-from fast_partial_tracking.tracker import PartialTracker, track
+from fast_partial_tracking.tracking.tracker import PartialTracker, track
 
 log = logging.getLogger("fast_partial_tracking.cli")
 

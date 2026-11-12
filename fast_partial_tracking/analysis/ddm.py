@@ -15,11 +15,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fast_partial_tracking.config import AnalysisConfig, matlab_round
+from fast_partial_tracking.compat.matlab import matlab_round
+from fast_partial_tracking.config import AnalysisConfig
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.model import polynomial_basis
-from fast_partial_tracking.peaks import Peaks, pick_peaks
-from fast_partial_tracking.windows import get_window
+from fast_partial_tracking.analysis.model import polynomial_basis
+from fast_partial_tracking.analysis.peaks import Peaks, pick_peaks
+from fast_partial_tracking.analysis.windows import get_window
 
 log = logging.getLogger(__name__)
 

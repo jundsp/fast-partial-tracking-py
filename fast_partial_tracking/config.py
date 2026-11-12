@@ -12,19 +12,11 @@ from typing import Any, Literal
 
 import numpy as np
 
+from fast_partial_tracking.compat.matlab import matlab_round, nextpow2
+
 WindowName = Literal["hann", "blackman_harris"]
 Geometry = Literal["centered", "matlab"]
 ThresholdReference = Literal["signal", "full_scale"]
-
-
-def matlab_round(x: float | np.ndarray) -> float | np.ndarray:
-    """Rounds half away from zero, like MATLAB's ``round`` (NumPy rounds half to even)."""
-    return np.sign(x) * np.floor(np.abs(x) + 0.5)
-
-
-def nextpow2(x: float) -> int:
-    """Returns the smallest p with 2**p >= |x| (MATLAB ``nextpow2``)."""
-    return int(np.ceil(np.log2(abs(x)))) if x != 0 else 0
 
 
 @dataclass(frozen=True)

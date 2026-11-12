@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from fast_partial_tracking.peaks import pick_peaks
+from fast_partial_tracking.analysis.peaks import pick_peaks
 
 
 def _reference(level: np.ndarray, threshold: float) -> tuple[list[int], list[int], list[int]]:

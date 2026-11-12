@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
@@ -25,13 +25,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from fast_partial_tracking.assignment import useful_assignments
+from fast_partial_tracking.tracking.assignment import useful_assignments
 from fast_partial_tracking.config import AnalysisConfig, TrackingConfig
-from fast_partial_tracking.cost import assignment_costs, cost_variances, midpoint_parameters
-from fast_partial_tracking.ddm import DdmEstimator, FrameEstimate
+from fast_partial_tracking.tracking.cost import assignment_costs, cost_variances, midpoint_parameters
+from fast_partial_tracking.analysis.ddm import DdmEstimator, FrameEstimate
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.labeling import label_assignments
-from fast_partial_tracking.model import frame_parameters
+from fast_partial_tracking.tracking.labeling import label_assignments
+from fast_partial_tracking.analysis.model import frame_parameters
 from fast_partial_tracking.partials import Frame, Partials
 
 if TYPE_CHECKING:
@@ -150,6 +150,23 @@ class PartialTracker:
         self._buffer = np.concatenate([self._buffer, samples])
         return self._process_available()
 
+    def process(self, blocks: Iterable[np.ndarray]) -> Iterator[Frame]:
+        """Tracks a whole stream of audio blocks, yielding frames as they become final.
+
+        Example:
+            >>> for frame in PartialTracker(fs).process(sf.blocks("in.wav", 4096)):
+            ...     writer.write_frame(frame)
+
+        Args:
+            blocks: Mono audio blocks (any sizes), e.g. from ``soundfile.blocks``.
+
+        Yields:
+            Every frame 0..M-1 in order; the tracker is flushed at the end.
+        """
+        for block in blocks:
+            yield from self.push(block)
+        yield from self.flush()
+
     def flush(self) -> list[Frame]:
         """Ends the stream: zero-pads the tail and returns the remaining frames.
 
@@ -226,13 +243,14 @@ class PartialTracker:
 
     def _emit(self, index: int, pending: _PendingFrame) -> Frame:
         """Converts an open frame's rows into a final ``Frame`` (eqs. 5-7 at n = 0)."""
-        omega, log_amp, phase = frame_parameters(pending.alpha)
+        omega, log_amplitude, phase = frame_parameters(pending.alpha)
         return Frame(
             index=index,
             center=int(self.grid.center(index)),
             time_s=float(self.grid.time_seconds(index)),
+            fs=self.grid.fs,
             omega=omega,
-            log_amp=log_amp,
+            log_amplitude=log_amplitude,
             phase=phase,
             track_id=pending.track_id.astype(np.int64),
             alpha=pending.alpha.copy() if self.keep_alpha else None,

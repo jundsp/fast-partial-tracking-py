@@ -41,7 +41,7 @@ def test_partial_parameters_match(results) -> None:
     case, partials, _ = results
     ref = case.partials
     np.testing.assert_allclose(partials.omega, ref[:, 2], rtol=0, atol=1e-10)
-    np.testing.assert_allclose(partials.log_amp, ref[:, 3], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(partials.log_amplitude, ref[:, 3], rtol=0, atol=1e-9)
     np.testing.assert_allclose(partials.phase, ref[:, 4], rtol=0, atol=1e-9)
 
 

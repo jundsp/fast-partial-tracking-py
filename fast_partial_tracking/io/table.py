@@ -32,6 +32,18 @@ HEADER_KEY = b"fast_partial_tracking"
 SUMMARY_KEY = b"fast_partial_tracking.summary"
 
 
+def grid_from_header(header: dict[str, Any]) -> FrameGrid:
+    """Rebuilds the frame grid stored in a file header (any format version).
+
+    Version 1 files (package 0.1) predate the geometry field and always used the MATLAB
+    frame placement.
+    """
+    info = dict(header.get("grid") or {})
+    if header.get("format_version", 1) < 2:
+        info.setdefault("geometry", "matlab")
+    return FrameGrid(**info)
+
+
 def schema(order: int | None, metadata: dict[bytes, bytes] | None = None) -> pa.Schema:
     """Arrow schema of the partials table.
 
@@ -67,7 +79,7 @@ def frames_to_batch(frames: list[Frame], fs: float, table_schema: pa.Schema) -> 
         "time_s": np.repeat([f.time_s for f in frames], counts).astype(float),
         "track_id": _cat([f.track_id for f in frames]).astype(np.int32),
         "frequency_hz": _cat([f.omega for f in frames]) * fs / (2.0 * np.pi),
-        "amplitude": 2.0 * np.exp(_cat([f.log_amp for f in frames])),
+        "amplitude": 2.0 * np.exp(_cat([f.log_amplitude for f in frames])),
         "phase": _cat([f.phase for f in frames]),
     }
     if "alpha_re" in table_schema.names:
@@ -88,7 +100,7 @@ def _decode(table: pa.Table, fs: float) -> dict[str, Any]:
         "frame": table.column("frame").to_numpy().astype(np.int64),
         "track_id": table.column("track_id").to_numpy().astype(np.int64),
         "omega": table.column("frequency_hz").to_numpy() * 2.0 * np.pi / fs,
-        "log_amp": np.log(table.column("amplitude").to_numpy() / 2.0),
+        "log_amplitude": np.log(table.column("amplitude").to_numpy() / 2.0),
         "phase": table.column("phase").to_numpy(),
         "alpha": alpha,
     }
@@ -101,7 +113,7 @@ def table_to_partials(table: pa.Table, header: dict[str, Any]) -> Partials:
         table: Table with the schema above.
         header: Parsed metadata (grid, num_tracks, settings).
     """
-    grid = FrameGrid(**dict(header.get("grid") or {}))
+    grid = grid_from_header(header)
     columns = _decode(table, grid.fs)
     if grid.num_frames is None:
         frames = int(columns["frame"].max() + 1) if columns["frame"].size else 0
@@ -126,8 +138,9 @@ def batch_to_frames(batch: pa.RecordBatch, grid: FrameGrid) -> list[Frame]:
             index=int(c["frame"][s]),
             center=int(grid.center(int(c["frame"][s]))),
             time_s=float(grid.time_seconds(int(c["frame"][s]))),
+            fs=grid.fs,
             omega=c["omega"][s:e],
-            log_amp=c["log_amp"][s:e],
+            log_amplitude=c["log_amplitude"][s:e],
             phase=c["phase"][s:e],
             track_id=c["track_id"][s:e],
             alpha=None if c["alpha"] is None else c["alpha"][s:e],

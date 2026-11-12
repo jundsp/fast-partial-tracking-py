@@ -20,7 +20,7 @@ from fast_partial_tracking.framing import FrameGrid
 from fast_partial_tracking.metrics import rsnr
 from fast_partial_tracking.partials import Frame, Partials
 from fast_partial_tracking.synthesis import Synthesizer, synthesize, synthesize_frames
-from fast_partial_tracking.tracker import PartialTracker, track
+from fast_partial_tracking.tracking.tracker import PartialTracker, track
 
 __all__ = [
     "AnalysisConfig",

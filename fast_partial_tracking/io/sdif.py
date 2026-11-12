@@ -72,7 +72,7 @@ class SdifWriter(PartialsWriter):
         if frame.time_s < 0:
             return
         matrix = np.column_stack(
-            [frame.track_id.astype(float), frame.frequency_hz(self.grid.fs), frame.amplitude, frame.phase]
+            [frame.track_id.astype(float), frame.frequency_hz, frame.amplitude, frame.phase]
         ).astype(_DTYPES[self.data_type])
         data = matrix.tobytes()
         padding = (-len(data)) % 8

@@ -7,7 +7,7 @@ import pytest
 
 from fast_partial_tracking import AnalysisConfig, rsnr, synthesize, track
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.windows import get_window
+from fast_partial_tracking.analysis.windows import get_window
 
 from .conftest import CASES, MatlabCase, load_mat
 

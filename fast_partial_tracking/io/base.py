@@ -18,7 +18,8 @@ from fast_partial_tracking.framing import FrameGrid
 from fast_partial_tracking.partials import Frame, Partials
 
 FORMAT_NAME = "fast-partial-tracking"
-FORMAT_VERSION = 1
+# 2: grid records its geometry; settings use the 0.2 names. Version 1 files are still read.
+FORMAT_VERSION = 2
 
 
 class PartialsWriter(ABC):

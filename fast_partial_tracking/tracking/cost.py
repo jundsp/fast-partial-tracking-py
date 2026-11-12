@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from fast_partial_tracking.config import TrackingConfig
-from fast_partial_tracking.model import angular_frequency, log_amplitude
+from fast_partial_tracking.analysis.model import angular_frequency, log_amplitude
 
 
 def cost_variances(tracking: TrackingConfig) -> tuple[float, float]:
@@ -42,7 +42,7 @@ def midpoint_parameters(
         fs: Sampling rate in Hz.
 
     Returns:
-        (log_amp, frequency_hz), each of shape (R,).
+        (log_amplitude, frequency_hz), each of shape (R,).
     """
     return log_amplitude(alpha, n), fs / (2.0 * np.pi) * angular_frequency(alpha, n)
 

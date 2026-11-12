@@ -88,6 +88,6 @@ def frame_parameters(alpha: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndar
         alpha: Coefficients, shape (R, Q + 1).
 
     Returns:
-        (omega, log_amp, phase), each of shape (R,).
+        (omega, log_amplitude, phase), each of shape (R,).
     """
     return alpha[:, 1].imag.copy(), alpha[:, 0].real.copy(), alpha[:, 0].imag.copy()

@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 
 from fast_partial_tracking.config import AnalysisConfig
-from fast_partial_tracking.ddm import DdmEstimator
+from fast_partial_tracking.analysis.ddm import DdmEstimator
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.model import angular_frequency, log_amplitude
-from fast_partial_tracking.tracker import reference_level_db
+from fast_partial_tracking.analysis.model import angular_frequency, log_amplitude
+from fast_partial_tracking.tracking.tracker import reference_level_db
 
 from .conftest import MatlabCase
 

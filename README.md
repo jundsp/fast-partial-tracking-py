@@ -8,7 +8,7 @@ Each analysis frame is modelled as a sum of generalized sinusoids, estimated wit
 Distribution Derivative Method. Peaks in consecutive frames are linked by solving a
 linear assignment problem, which gives partials (sinusoidal trajectories) that can be
 resynthesized, edited, plotted or exported. The package includes:
-- a streaming tracker that runs faster than real time
+- a streaming tracker that runs in real time
 - a toolkit for editing partials (pruning, selection, pitch shift, time stretch)
 - modern file formats (Parquet, Arrow) plus SDIF
 - an interactive web app

@@ -46,21 +46,31 @@ def _configs(args: argparse.Namespace, fs: float) -> tuple[AnalysisConfig, Track
 
 
 def cmd_analyze(args: argparse.Namespace) -> None:
-    """Tracks an audio file and writes the partials, streaming block by block."""
-    info = sf.info(str(args.input))
-    analysis, tracking = _configs(args, info.samplerate)
-    order = None if args.no_alpha else analysis.effective_order
+    """Tracks an audio file and writes the partials."""
+    fs = sf.info(str(args.input)).samplerate
+    analysis, tracking = _configs(args, fs)
     if args.stream:
-        tracker = PartialTracker(info.samplerate, analysis, tracking, keep_alpha=not args.no_alpha)
-        with open_writer(args.output, tracker.grid, order=order) as writer:
-            for block in sf.blocks(str(args.input), blocksize=args.block_size, always_2d=True):
-                for frame in tracker.push(block[:, 0]):
-                    writer.write_frame(frame)
-            for frame in tracker.flush():
+        _analyze_stream(args, fs, analysis, tracking)
+    else:
+        _analyze_batch(args, analysis, tracking)
+
+
+def _analyze_stream(args: argparse.Namespace, fs: float, analysis: AnalysisConfig, tracking: TrackingConfig) -> None:
+    """Reads, tracks and writes block by block, with bounded memory."""
+    order = None if args.no_alpha else analysis.effective_order
+    tracker = PartialTracker(fs, analysis, tracking, keep_alpha=not args.no_alpha)
+    with open_writer(args.output, tracker.grid, order=order) as writer:
+        for block in sf.blocks(str(args.input), blocksize=args.block_size, always_2d=True):
+            for frame in tracker.push(block[:, 0]):
                 writer.write_frame(frame)
-            writer.set_summary(tracker.grid, tracker.num_tracks)
-        log.info(f"{tracker.num_tracks} partials, {tracker.grid.num_frames} frames -> {args.output}")
-        return
+        for frame in tracker.flush():
+            writer.write_frame(frame)
+        writer.set_summary(tracker.grid, tracker.num_tracks)
+    log.info(f"{tracker.num_tracks} partials, {tracker.grid.num_frames} frames -> {args.output}")
+
+
+def _analyze_batch(args: argparse.Namespace, analysis: AnalysisConfig, tracking: TrackingConfig) -> None:
+    """Tracks the whole file at once (threshold relative to the loudest frame, like MATLAB)."""
     x, fs = sf.read(str(args.input), always_2d=True)
     partials = track(x[:, 0], fs, analysis, tracking, keep_alpha=not args.no_alpha)
     write(partials, args.output, include_alpha=not args.no_alpha)

@@ -10,12 +10,13 @@ frequency.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import numpy as np
 
 from fast_partial_tracking.config import matlab_round
 from fast_partial_tracking.framing import FrameGrid
-from fast_partial_tracking.labeling import match_sets
+from fast_partial_tracking.labeling import SetMatch, match_sets
 from fast_partial_tracking.partials import Frame, Partials
 
 
@@ -56,6 +57,79 @@ def cubic_phase_segments(
     return (2.0 * envelope * np.cos(theta))[:, :hop]
 
 
+@dataclass(frozen=True)
+class Segments:
+    """Endpoint parameters of sinusoid segments spanning one hop.
+
+    Attributes:
+        omega: Start/end angular frequencies (radians/sample), shape (P, 2).
+        amplitude: Start/end linear amplitudes of the complex model, shape (P, 2).
+        phase: Start/end phases, shape (P, 2).
+    """
+
+    omega: np.ndarray
+    amplitude: np.ndarray
+    phase: np.ndarray
+
+    def __len__(self) -> int:
+        return int(self.omega.shape[0])
+
+    @classmethod
+    def concat(cls, parts: list[Segments]) -> Segments:
+        return cls(*(np.concatenate(columns) for columns in zip(*((p.omega, p.amplitude, p.phase) for p in parts))))
+
+    def render(self, hop: int) -> np.ndarray:
+        """Sum of all segments, ``hop`` samples."""
+        return cubic_phase_segments(self.omega, self.amplitude, self.phase, hop).sum(axis=0)
+
+
+def _fade_in(frame: Frame, rows: np.ndarray, hop: int) -> Segments:
+    """Partials born at ``frame``: fade in over the preceding hop at constant frequency."""
+    w, ph = frame.omega[rows], frame.phase[rows]
+    return Segments(
+        np.stack([w, w], axis=1),
+        np.stack([np.zeros_like(w), np.exp(frame.log_amp[rows])], axis=1),
+        np.stack([ph - w * hop, ph], axis=1),
+    )
+
+
+def _fade_out(frame: Frame, rows: np.ndarray, hop: int) -> Segments:
+    """Partials ending at ``frame``: fade out over the following hop at constant frequency."""
+    w, ph = frame.omega[rows], frame.phase[rows]
+    return Segments(
+        np.stack([w, w], axis=1),
+        np.stack([np.exp(frame.log_amp[rows]), np.zeros_like(w)], axis=1),
+        np.stack([ph, ph + w * hop], axis=1),
+    )
+
+
+def _continue(prev: Frame, prev_rows: np.ndarray, curr: Frame, curr_rows: np.ndarray) -> Segments:
+    """Partials present in both frames: interpolate between their parameters."""
+    return Segments(
+        np.stack([prev.omega[prev_rows], curr.omega[curr_rows]], axis=1),
+        np.stack([np.exp(prev.log_amp[prev_rows]), np.exp(curr.log_amp[curr_rows])], axis=1),
+        np.stack([prev.phase[prev_rows], curr.phase[curr_rows]], axis=1),
+    )
+
+
+def hop_segments(prev: Frame | None, curr: Frame, hop: int) -> Segments | None:
+    """All segments of the hop ending at ``curr``, or None if nothing sounds.
+
+    Order follows jun_synthesize_partials.m: births (fade in), deaths (fade out), then
+    continuations.
+    """
+    none = np.zeros(0, np.intp)
+    if prev is None or len(prev) == 0:
+        match = SetMatch(none, none, none, np.arange(len(curr)))
+    else:
+        match = match_sets(prev.track_id, curr.track_id)
+    parts = [_fade_in(curr, match.unmatched_b, hop)]
+    if prev is not None:
+        parts += [_fade_out(prev, match.unmatched_a, hop), _continue(prev, match.a, curr, match.b)]
+    segments = Segments.concat(parts)
+    return segments if len(segments) else None
+
+
 class Synthesizer:
     """Streaming McAulay-Quatieri synthesizer.
 
@@ -93,11 +167,8 @@ class Synthesizer:
         if hop <= 0:
             return np.zeros(0)
 
-        segments = _hop_segments(prev, frame, hop)
-        if segments is None:
-            return np.zeros(hop)
-        omega, amplitude, phase = segments
-        return cubic_phase_segments(omega, amplitude, phase, hop).sum(axis=0)
+        segments = hop_segments(prev, frame, hop)
+        return np.zeros(hop) if segments is None else segments.render(hop)
 
     def finish(self, padded_length: int) -> np.ndarray:
         """Returns the silent tail after the last frame origin.
@@ -111,60 +182,6 @@ class Synthesizer:
         tail = max(padded_length - self._position, 0)
         self._position += tail
         return np.zeros(tail)
-
-
-def _hop_segments(prev: Frame | None, curr: Frame, hop: int) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-    """Endpoint parameters of every segment in one hop.
-
-    Order follows jun_synthesize_partials.m: births (fade in), deaths (fade out), then
-    continuations.
-    """
-    n_prev = 0 if prev is None else len(prev)
-    n_curr = len(curr)
-    if n_prev == 0 and n_curr == 0:
-        return None
-    if prev is None or n_prev == 0:
-        births, deaths = np.arange(n_curr), np.zeros(0, np.intp)
-        cont_prev = cont_curr = np.zeros(0, np.intp)
-    elif n_curr == 0:
-        births, deaths = np.zeros(0, np.intp), np.arange(n_prev)
-        cont_prev = cont_curr = np.zeros(0, np.intp)
-    else:
-        match = match_sets(prev.track_id, curr.track_id)
-        births, deaths = match.unmatched_b, match.unmatched_a
-        cont_prev, cont_curr = match.a, match.b
-
-    parts: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-    if births.size:
-        w = curr.omega[births]
-        ph = curr.phase[births]
-        parts.append(
-            (
-                np.stack([w, w], axis=1),
-                np.stack([np.zeros_like(w), np.exp(curr.log_amp[births])], axis=1),
-                np.stack([ph - w * hop, ph], axis=1),
-            )
-        )
-    if deaths.size and prev is not None:
-        w = prev.omega[deaths]
-        ph = prev.phase[deaths]
-        parts.append(
-            (
-                np.stack([w, w], axis=1),
-                np.stack([np.exp(prev.log_amp[deaths]), np.zeros_like(w)], axis=1),
-                np.stack([ph, ph + w * hop], axis=1),
-            )
-        )
-    if cont_prev.size and prev is not None:
-        parts.append(
-            (
-                np.stack([prev.omega[cont_prev], curr.omega[cont_curr]], axis=1),
-                np.stack([np.exp(prev.log_amp[cont_prev]), np.exp(curr.log_amp[cont_curr])], axis=1),
-                np.stack([prev.phase[cont_prev], curr.phase[cont_curr]], axis=1),
-            )
-        )
-    omega, amplitude, phase = (np.concatenate(columns) for columns in zip(*parts))
-    return omega, amplitude, phase
 
 
 def synthesize_frames(frames: Iterable[Frame], grid: FrameGrid, trim: bool = True) -> np.ndarray:

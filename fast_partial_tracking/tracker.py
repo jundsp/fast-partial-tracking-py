@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +36,32 @@ if TYPE_CHECKING:
     from fast_partial_tracking.io.base import PartialsWriter
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _PendingFrame:
+    """Rows of the newest frame, which stays open until the next frame is linked.
+
+    Attributes:
+        alpha: Model coefficients of each row, shape (rows, Q + 1).
+        track_id: Label of each row.
+        peak: Index of each linked row's peak within the frame's estimate; partials born
+            in this frame are appended later and have no entry here.
+    """
+
+    alpha: np.ndarray
+    track_id: np.ndarray
+    peak: np.ndarray
+
+    @classmethod
+    def empty(cls, order: int) -> _PendingFrame:
+        return cls(np.zeros((0, order + 1), complex), np.zeros(0, np.int64), np.zeros(0, np.intp))
+
+    def with_births(self, alpha: np.ndarray, track_id: np.ndarray) -> _PendingFrame:
+        """Appends partials that start in this frame (found when linking the next one)."""
+        return _PendingFrame(
+            np.concatenate([self.alpha, alpha]), np.concatenate([self.track_id, track_id]), self.peak
+        )
 
 
 class PartialTracker:
@@ -87,12 +114,7 @@ class PartialTracker:
         self._finished = False
         self.num_tracks = 0
         self._prev: FrameEstimate | None = None
-        # Rows of the frame waiting to be emitted (frame k-1 while processing frame k).
-        self._pending_alpha = np.zeros((0, self.estimator.order + 1), complex)
-        self._pending_tracks = np.zeros(0, np.int64)
-        # Peak index (within the previous estimate) and label of each active partial.
-        self._active_peaks = np.zeros(0, np.intp)
-        self._active_tracks = np.zeros(0, np.int64)
+        self._pending = _PendingFrame.empty(self.estimator.order)
 
     def push(self, samples: np.ndarray) -> list[Frame]:
         """Feeds a block of audio and returns the frames that became final.
@@ -124,7 +146,7 @@ class PartialTracker:
         self._buffer = np.concatenate([self._buffer, np.zeros(self.grid.pad_back)])
         # The padded tail can hold more than M frames when n_dft > N; MATLAB stops at M.
         frames = self._process_available(limit=self.grid.num_frames)
-        frames.append(self._emit_pending(self.grid.num_frames - 1))
+        frames.append(self._emit(self.grid.num_frames - 1, self._pending))
         self._finished = True
         return frames
 
@@ -142,26 +164,23 @@ class PartialTracker:
         return frames
 
     def _process_frame(self, samples: np.ndarray) -> Frame | None:
+        """Analyzes frame k, links it to frame k-1 and returns the now-final frame k-1."""
         k = self._next_frame
         self._next_frame += 1
         estimate = self.estimator(samples, self.threshold_db)
-        prev = self._prev
-        self._prev = estimate
+        prev, self._prev = self._prev, estimate
         if prev is None:
             return None
+        return self._advance(k, prev, estimate)
 
+    def _advance(self, k: int, prev: FrameEstimate, estimate: FrameEstimate) -> Frame:
+        """Labels the links between frames k-1 and k (Section 3.6) and rolls the state."""
         rows, cols = self._link(prev, estimate)
-        labels = label_assignments(self._active_peaks, self._active_tracks, rows, cols, self.num_tracks)
+        labels = label_assignments(self._pending.peak, self._pending.track_id, rows, cols, self.num_tracks)
         # Births are discovered now but start in frame k-1, so they are appended to it.
-        self._pending_alpha = np.concatenate([self._pending_alpha, prev.alpha[labels.birth_prev]])
-        self._pending_tracks = np.concatenate([self._pending_tracks, labels.birth_track])
+        finished = self._emit(k - 1, self._pending.with_births(prev.alpha[labels.birth_prev], labels.birth_track))
         self.num_tracks += labels.birth_track.size
-        finished = self._emit_pending(k - 1)
-
-        self._active_peaks = labels.curr_peaks
-        self._active_tracks = labels.curr_tracks
-        self._pending_alpha = estimate.alpha[self._active_peaks]
-        self._pending_tracks = self._active_tracks
+        self._pending = _PendingFrame(estimate.alpha[labels.curr_peaks], labels.curr_tracks, labels.curr_peaks)
         return finished
 
     def _link(self, prev: FrameEstimate, curr: FrameEstimate) -> tuple[np.ndarray, np.ndarray]:
@@ -177,8 +196,9 @@ class PartialTracker:
         )
         return useful_assignments(cost, useful)
 
-    def _emit_pending(self, index: int) -> Frame:
-        omega, log_amp, phase = frame_parameters(self._pending_alpha)
+    def _emit(self, index: int, pending: _PendingFrame) -> Frame:
+        """Converts an open frame's rows into a final ``Frame`` (eqs. 5-7 at n = 0)."""
+        omega, log_amp, phase = frame_parameters(pending.alpha)
         return Frame(
             index=index,
             center=int(self.grid.center(index)),
@@ -186,8 +206,8 @@ class PartialTracker:
             omega=omega,
             log_amp=log_amp,
             phase=phase,
-            track_id=self._pending_tracks.astype(np.int64),
-            alpha=self._pending_alpha.copy() if self.keep_alpha else None,
+            track_id=pending.track_id.astype(np.int64),
+            alpha=pending.alpha.copy() if self.keep_alpha else None,
         )
 
 

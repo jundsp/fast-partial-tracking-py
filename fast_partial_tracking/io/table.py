@@ -79,6 +79,21 @@ def frames_to_batch(frames: list[Frame], fs: float, table_schema: pa.Schema) -> 
     return pa.RecordBatch.from_arrays(arrays, schema=table_schema)
 
 
+def _decode(table: pa.Table, fs: float) -> dict[str, Any]:
+    """Converts table columns back to the in-memory representation (model units)."""
+    alpha = None
+    if "alpha_re" in table.column_names:
+        alpha = _list_to_matrix(table.column("alpha_re")) + 1j * _list_to_matrix(table.column("alpha_im"))
+    return {
+        "frame": table.column("frame").to_numpy().astype(np.int64),
+        "track_id": table.column("track_id").to_numpy().astype(np.int64),
+        "omega": table.column("frequency_hz").to_numpy() * 2.0 * np.pi / fs,
+        "log_amp": np.log(table.column("amplitude").to_numpy() / 2.0),
+        "phase": table.column("phase").to_numpy(),
+        "alpha": alpha,
+    }
+
+
 def table_to_partials(table: pa.Table, header: dict[str, Any]) -> Partials:
     """Rebuilds ``Partials`` from a table and its metadata header.
 
@@ -86,34 +101,16 @@ def table_to_partials(table: pa.Table, header: dict[str, Any]) -> Partials:
         table: Table with the schema above.
         header: Parsed metadata (grid, num_tracks, settings).
     """
-    grid_info = dict(header.get("grid") or {})
-    grid = FrameGrid(**grid_info)
-    frame = table.column("frame").to_numpy().astype(np.int64)
+    grid = FrameGrid(**dict(header.get("grid") or {}))
+    columns = _decode(table, grid.fs)
     if grid.num_frames is None:
-        signal_length = int(frame.max() + 1) * grid.hop if frame.size else 0
-        grid = grid.with_signal_length(signal_length)
-    fs = grid.fs
-    alpha = None
-    if "alpha_re" in table.column_names:
-        re = _list_to_matrix(table.column("alpha_re"))
-        im = _list_to_matrix(table.column("alpha_im"))
-        alpha = re + 1j * im
+        frames = int(columns["frame"].max() + 1) if columns["frame"].size else 0
+        grid = grid.with_signal_length(frames * grid.hop)
     num_tracks = header.get("num_tracks")
-    track_id = table.column("track_id").to_numpy().astype(np.int64)
     if num_tracks is None:
-        num_tracks = int(track_id.max()) + 1 if track_id.size else 0
+        num_tracks = int(columns["track_id"].max()) + 1 if columns["track_id"].size else 0
     metadata = {k: v for k, v in header.items() if k not in {"grid", "num_tracks", "format", "format_version"}}
-    return Partials(
-        grid=grid,
-        frame=frame,
-        track_id=track_id,
-        omega=table.column("frequency_hz").to_numpy() * 2.0 * np.pi / fs,
-        log_amp=np.log(table.column("amplitude").to_numpy() / 2.0),
-        phase=table.column("phase").to_numpy(),
-        alpha=alpha,
-        num_tracks=int(num_tracks),
-        metadata=metadata,
-    )
+    return Partials(grid=grid, num_tracks=int(num_tracks), metadata=metadata, **columns)
 
 
 def batch_to_frames(batch: pa.RecordBatch, grid: FrameGrid) -> list[Frame]:
@@ -121,26 +118,19 @@ def batch_to_frames(batch: pa.RecordBatch, grid: FrameGrid) -> list[Frame]:
     table = pa.Table.from_batches([batch])
     if table.num_rows == 0:
         return []
-    frame = table.column("frame").to_numpy().astype(np.int64)
-    omega = table.column("frequency_hz").to_numpy() * 2.0 * np.pi / grid.fs
-    log_amp = np.log(table.column("amplitude").to_numpy() / 2.0)
-    phase = table.column("phase").to_numpy()
-    track_id = table.column("track_id").to_numpy().astype(np.int64)
-    alpha = None
-    if "alpha_re" in table.column_names:
-        alpha = _list_to_matrix(table.column("alpha_re")) + 1j * _list_to_matrix(table.column("alpha_im"))
-    starts = np.flatnonzero(np.r_[True, np.diff(frame) != 0])
-    ends = np.r_[starts[1:], frame.size]
+    c = _decode(table, grid.fs)
+    starts = np.flatnonzero(np.r_[True, np.diff(c["frame"]) != 0])
+    ends = np.r_[starts[1:], c["frame"].size]
     return [
         Frame(
-            index=int(frame[s]),
-            center=int(grid.center(int(frame[s]))),
-            time_s=float(grid.time_seconds(int(frame[s]))),
-            omega=omega[s:e],
-            log_amp=log_amp[s:e],
-            phase=phase[s:e],
-            track_id=track_id[s:e],
-            alpha=None if alpha is None else alpha[s:e],
+            index=int(c["frame"][s]),
+            center=int(grid.center(int(c["frame"][s]))),
+            time_s=float(grid.time_seconds(int(c["frame"][s]))),
+            omega=c["omega"][s:e],
+            log_amp=c["log_amp"][s:e],
+            phase=c["phase"][s:e],
+            track_id=c["track_id"][s:e],
+            alpha=None if c["alpha"] is None else c["alpha"][s:e],
         )
         for s, e in zip(starts, ends)
     ]

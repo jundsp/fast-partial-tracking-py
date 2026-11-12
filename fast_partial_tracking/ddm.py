@@ -48,6 +48,19 @@ class FrameEstimate:
         return int(self.alpha.shape[0])
 
 
+@dataclass(frozen=True)
+class _DdmSpectra:
+    """DFTs that form the DDM linear system of one frame (all phase-centred on n = 0).
+
+    Attributes:
+        weighted: Column i holds DFT{w(n) x(n) (i+1) n**i}, i = 0..Q-1, shape (n_dft, Q).
+        derivative: DFT{w'(n) x(n)} - j omega DFT{w(n) x(n)}, shape (n_dft,).
+    """
+
+    weighted: np.ndarray
+    derivative: np.ndarray
+
+
 class DdmEstimator:
     """Estimates the short-term model (eq. 4) for every spectral peak of a frame.
 
@@ -88,81 +101,79 @@ class DdmEstimator:
         Returns:
             The accepted estimates and the frame's spectrum.
         """
-        n_dft = self.grid.n_dft
-        q = self.order
         windowed = self.window * frame
-        spectrum = np.fft.fft(windowed, n_dft)
-        peaks = pick_peaks(spectrum[: n_dft // 2], threshold_db)
+        spectrum = np.fft.fft(windowed, self.grid.n_dft)
+        peaks = pick_peaks(spectrum[: self.grid.n_dft // 2], threshold_db)
         if len(peaks) == 0:
-            return FrameEstimate(np.zeros((0, q + 1), complex), peaks.bin, spectrum, peaks)
+            return FrameEstimate(np.zeros((0, self.order + 1), complex), peaks.bin, spectrum, peaks)
 
-        # Columns of the DDM system: DFTs of the windowed signal multiplied by the
-        # polynomial derivatives i*n**(i-1), i = 1..Q (the first is the plain DFT).
-        weighted = np.empty((n_dft, q), dtype=complex)
-        weighted[:, 0] = spectrum * self.centering
-        if q > 1:
-            weighted[:, 1:] = np.fft.fft(windowed[:, None] * self.basis_derivative[:, 1:], n_dft, axis=0)
-            weighted[:, 1:] *= self.centering[:, None]
-        # DFT of the signal against the window derivative, plus the DFT-kernel derivative
-        # term; together they form -(right-hand side) of the DDM equations.
-        derivative = np.fft.fft(self.window_derivative * frame, n_dft) * self.centering
-        derivative += weighted[:, 0] * (-1j * self.omega)
-
-        alpha_tail, rows_valid = self._solve(weighted, derivative, peaks)
-        alpha = np.zeros((len(peaks), q + 1), dtype=complex)
-        alpha[:, 1:] = alpha_tail
-
-        valid = rows_valid & np.all(np.isfinite(alpha_tail), axis=1)
-        with np.errstate(all="ignore"):
-            edges = np.abs(alpha_tail @ self.basis[[0, -1], 1:].T)
-        valid &= np.all(edges <= _EDGE_LIMIT, axis=1)
-        if np.any(~valid):
-            log.debug(f"skipping {np.count_nonzero(~valid)} peak(s) with non-finite DDM estimates")
-
-        alpha[valid, 0] = self._alpha0(alpha[valid], weighted[peaks.bin[valid], 0], peaks.bin[valid])
-        with np.errstate(all="ignore"):
-            checks = alpha.real @ self._check_rows.T
-        # Same test as jun_ddm.m: log-amplitude at the frame edges and centre compared
-        # against twice the frame's peak sample value.
-        valid &= np.all(checks <= 2.0 * np.max(np.abs(frame)), axis=1)
-
+        spectra = self._ddm_spectra(frame, windowed, spectrum)
+        alpha = np.zeros((len(peaks), self.order + 1), dtype=complex)
+        alpha[:, 1:], solved = self._solve_slopes(spectra, peaks)
+        valid = solved & self._is_stable(alpha)
+        alpha[valid, 0] = self._estimate_alpha0(alpha[valid], spectra.weighted[peaks.bin[valid], 0], peaks.bin[valid])
+        valid &= self._within_amplitude_bound(alpha, frame)
         return FrameEstimate(alpha[valid], peaks.bin[valid], spectrum, peaks)
 
-    def _solve(self, weighted: np.ndarray, derivative: np.ndarray, peaks: Peaks) -> tuple[np.ndarray, np.ndarray]:
-        """Solves the per-peak DDM least-squares systems in one batch.
+    def _ddm_spectra(self, frame: np.ndarray, windowed: np.ndarray, spectrum: np.ndarray) -> _DdmSpectra:
+        """DFTs of the frame against the window, its derivative and the polynomial terms.
 
-        For peak j the rows are the peak bin followed by the bins
-        max(left, peak - (R-1)) .. min(right, peak + (R-1), n_dft/2 - 1) in descending
-        order (the peak bin appears twice, as in MATLAB). Systems with fewer rows are
-        padded with zero rows, which leaves their least-squares solutions unchanged.
+        Args:
+            frame: Raw frame samples x(n).
+            windowed: w(n) x(n).
+            spectrum: DFT of ``windowed``.
+        """
+        weighted = np.empty((self.grid.n_dft, self.order), dtype=complex)
+        weighted[:, 0] = spectrum * self.centering
+        if self.order > 1:
+            weighted[:, 1:] = np.fft.fft(windowed[:, None] * self.basis_derivative[:, 1:], self.grid.n_dft, axis=0)
+            weighted[:, 1:] *= self.centering[:, None]
+        # Window-derivative DFT plus the DFT-kernel derivative term: together they form
+        # -(right-hand side) of the DDM equations.
+        derivative = np.fft.fft(self.window_derivative * frame, self.grid.n_dft) * self.centering
+        derivative += weighted[:, 0] * (-1j * self.omega)
+        return _DdmSpectra(weighted, derivative)
+
+    def _solve_slopes(self, spectra: _DdmSpectra, peaks: Peaks) -> tuple[np.ndarray, np.ndarray]:
+        """Solves the DDM systems A alpha_{1..Q} = b of all peaks in one batch.
 
         Returns:
             (alpha_1..Q per peak with shape (P, Q), mask of systems that could be solved).
         """
-        q = self.order
+        rows, mask, num_rows = self._bin_rows(peaks)
+        a = spectra.weighted[rows] * mask[..., None]  # (P, rows, Q)
+        b = -spectra.derivative[rows] * mask  # (P, rows)
+        return _least_squares(a, b, solvable=num_rows >= self.order)
+
+    def _bin_rows(self, peaks: Peaks) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """DFT bins entering each peak's DDM system.
+
+        For peak j the rows are the peak bin followed by the bins
+        max(left, peak - (R-1)) .. min(right, peak + (R-1), n_dft/2 - 1) in descending
+        order (the peak bin appears twice, as in MATLAB). Shorter systems are padded with
+        masked zero rows, which leaves their least-squares solutions unchanged.
+
+        Returns:
+            (rows (P, max_rows) bin indices, mask of used rows, number of used rows per peak).
+        """
         span = self.num_bins - 1
         lo = np.maximum(peaks.left, peaks.bin - span)
         hi = np.minimum(np.minimum(peaks.right, peaks.bin + span), self.grid.n_dft // 2 - 1)
         width = hi - lo + 1
         # At least Q rows so every R factor is square; extra rows are zero padding.
-        max_rows = max(1 + int(width.max()), q)
-        k = np.arange(max_rows - 1)
-        side_rows = hi[:, None] - k[None, :]
+        k = np.arange(max(1 + int(width.max()), self.order) - 1)
         used = k[None, :] < width[:, None]
-        rows = np.concatenate([peaks.bin[:, None], np.where(used, side_rows, 0)], axis=1)
+        rows = np.concatenate([peaks.bin[:, None], np.where(used, hi[:, None] - k[None, :], 0)], axis=1)
         mask = np.concatenate([np.ones((len(peaks), 1), bool), used], axis=1)
+        return rows, mask, width + 1
 
-        a = weighted[rows] * mask[..., None]  # (P, rows, Q)
-        b = -derivative[rows] * mask  # (P, rows)
-        q_mat, r_mat = np.linalg.qr(a)
-        rhs = np.einsum("prq,pr->pq", q_mat.conj(), b)
-        solvable = (width + 1 >= q) & np.all(np.abs(np.diagonal(r_mat, axis1=1, axis2=2)) > 0, axis=1)
-        x = np.full((len(peaks), q), np.nan + 0j)
-        if np.any(solvable):
-            x[solvable] = _back_substitute(r_mat[solvable], rhs[solvable])
-        return x, solvable
+    def _is_stable(self, alpha: np.ndarray) -> np.ndarray:
+        """Rejects non-finite slopes and models that explode at the frame edges."""
+        with np.errstate(all="ignore"):
+            edges = np.abs(alpha[:, 1:] @ self.basis[[0, -1], 1:].T)
+        return np.all(np.isfinite(alpha[:, 1:]), axis=1) & np.all(edges <= _EDGE_LIMIT, axis=1)
 
-    def _alpha0(self, alpha: np.ndarray, peak_value: np.ndarray, peak_bin: np.ndarray) -> np.ndarray:
+    def _estimate_alpha0(self, alpha: np.ndarray, peak_value: np.ndarray, peak_bin: np.ndarray) -> np.ndarray:
         """Estimates alpha_0 from the peak bin (jun_ddm.m's single-bin approximation).
 
         With alpha_1..Q known, the DFT of w(n) exp(sum_{i>=1} alpha_i n**i) at the peak
@@ -174,6 +185,36 @@ class DdmEstimator:
             kernel = np.exp(-1j * self.n[:, None] * self.omega[peak_bin][None, :])
             model_value = np.sum(kernel * gamma, axis=0)
             return np.log(peak_value) - np.log(model_value)
+
+    def _within_amplitude_bound(self, alpha: np.ndarray, frame: np.ndarray) -> np.ndarray:
+        """Same final test as jun_ddm.m.
+
+        The log-amplitude at the frame edges and centre is compared with twice the
+        largest sample value (a loose sanity bound that only rejects exploding models).
+        """
+        with np.errstate(all="ignore"):
+            checks = alpha.real @ self._check_rows.T
+        return np.all(checks <= 2.0 * np.max(np.abs(frame)), axis=1)
+
+
+def _least_squares(a: np.ndarray, b: np.ndarray, solvable: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Batched complex least squares via QR (Householder, like MATLAB's backslash).
+
+    Args:
+        a: System matrices, shape (P, rows, Q).
+        b: Right-hand sides, shape (P, rows).
+        solvable: Systems with enough rows to be determined.
+
+    Returns:
+        (solutions with NaN for unsolvable systems, mask of solved systems).
+    """
+    q_mat, r_mat = np.linalg.qr(a)
+    rhs = np.einsum("prq,pr->pq", q_mat.conj(), b)
+    solvable = solvable & np.all(np.abs(np.diagonal(r_mat, axis1=1, axis2=2)) > 0, axis=1)
+    x = np.full(rhs.shape, np.nan + 0j)
+    if np.any(solvable):
+        x[solvable] = _back_substitute(r_mat[solvable], rhs[solvable])
+    return x, solvable
 
 
 def _back_substitute(r: np.ndarray, y: np.ndarray) -> np.ndarray:

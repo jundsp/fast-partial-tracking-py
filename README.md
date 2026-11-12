@@ -21,10 +21,12 @@ exactly, and tests check this against reference data exported from MATLAB.
 ## Install
 
 ```sh
-pip install fast-partial-tracking               # core + `fpt` command
-pip install "fast-partial-tracking[ui]"         # + web app (streamlit, plotly)
-pip install "fast-partial-tracking[plot,fast]"  # + matplotlib plots, numexpr speed-up
+pip install "fast-partial-tracking[all]"
 ```
+
+That installs everything (web app, plotting, live microphone, speed-up, dataframes). The
+core alone is `pip install fast-partial-tracking`; pick individual extras with e.g.
+`pip install "fast-partial-tracking[ui,plot]"`:
 
 | extra | adds |
 |---|---|
@@ -33,6 +35,18 @@ pip install "fast-partial-tracking[plot,fast]"  # + matplotlib plots, numexpr sp
 | `fast` | numexpr for the DDM's hot loop (about 1.7× faster single-threaded) |
 | `dataframes` | `Partials.to_polars()` / `to_pandas()` |
 | `live` | sounddevice, for `examples/live_microphone.py` |
+| `all` | all of the above |
+
+### From a clone
+
+```sh
+git clone https://github.com/jundsp/fast-partial-tracking-py.git
+cd fast-partial-tracking-py
+uv sync --extra dev
+```
+
+`--extra dev` installs every optional feature plus the test tools; prefix commands with
+`uv run` (e.g. `uv run fpt ui`). Without uv: `pip install -e ".[dev]"`.
 
 ## Quick start
 
@@ -51,9 +65,12 @@ partials.save("voice.parquet")         # or .arrows / .sdif / .bin
 ## Web app
 
 ```sh
-fpt ui                 # demo voice and synthetic test signals
-fpt ui your.wav        # open a file
+fpt ui
+fpt ui your.wav
 ```
+
+Without a file it opens the demo voice; synthetic test signals and file upload are in the
+sidebar.
 
 - **Settings:** tune the window, hop, Q, threshold, δ, ζ_f and ζ_a in the sidebar, with a MATLAB preset available. Results are cached, so moving sliders back and forth is instant.
 - **View:** zoom into the partials drawn over the spectrogram; hover a line to see its partial number, frequency and level.
@@ -120,16 +137,21 @@ with fpt.io.open_writer("live.arrows", tracker.grid, order=2) as writer:
 ## Command line
 
 ```sh
-fpt analyze in.wav -o partials.parquet --report        # prints R-SNR
-fpt analyze long.wav -o partials.arrows --stream       # block by block, constant memory
-fpt analyze in.wav -o p.parquet --preset matlab        # exact MATLAB jun_demo settings
+fpt analyze in.wav -o partials.parquet --report
+fpt analyze long.wav -o partials.arrows --stream
+fpt analyze in.wav -o p.parquet --preset matlab
 fpt analyze in.wav -o p.parquet --config settings.json --prune 3
 fpt synth partials.parquet -o resynthesis.wav
 fpt convert partials.parquet -o partials.sdif
 fpt plot partials.parquet -o partials.png --audio in.wav
-fpt info partials.parquet                              # summary + partial-length histogram
+fpt info partials.parquet
 fpt ui in.wav
 ```
+
+- `--report` prints the resynthesis R-SNR; `--stream` reads and writes block by block with
+  constant memory; `--preset matlab` uses the exact MATLAB `jun_demo` settings.
+- `fpt info` prints a summary and a partial-length histogram. `fpt <command> --help` lists
+  every option.
 
 ## File formats
 
@@ -203,14 +225,28 @@ Both repositories carry the same fixes:
 
 Outputs go to `~/Documents/output/fast-partial-tracking/examples/<name>/` (override with `--out`).
 
+## Live microphone
+
+```sh
+uv run python examples/live_microphone.py --seconds 20
+```
+
+Tracks your default input device in real time and draws the partials in a scrolling plot.
+macOS asks for microphone permission for your terminal on first use (System Settings →
+Privacy & Security → Microphone). Add `--simulate` to replay the demo voice instead.
+
 ## Development
 
 ```sh
 uv sync --extra dev
-uv run pytest                     # unit, MATLAB equivalence, UI and example tests
-uv run pytest -m "not examples"   # skip running the example scripts
-uv run pytest --matlab            # re-export the MATLAB references first (needs MATLAB)
+uv run pytest
+uv run pytest -m "not examples"
+uv run pytest --matlab
 ```
+
+The first runs everything (unit, MATLAB equivalence, UI and example tests); the second
+skips running the example scripts; the third re-exports the MATLAB references first
+(needs MATLAB, see `matlab/export_reference.m`).
 
 ## Citation
 

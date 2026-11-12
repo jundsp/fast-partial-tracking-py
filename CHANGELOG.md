@@ -17,7 +17,7 @@ app and about 5× faster tracking. Exact MATLAB results remain available through
 - **Web app**: `fpt ui`, an interactive Streamlit app.
 - **Command line**: `fpt plot`, `fpt ui`, a richer `fpt info`, and `analyze --preset/--config/--prune`. Streaming file analysis now uses the signal-relative threshold.
 - **Examples gallery**: 11 runnable examples, all exercised by the test suite.
-- **Extras**: `fast`, `plot`, `ui`, `dataframes` and `live`.
+- **Extras**: `fast`, `plot`, `ui`, `dataframes`, `live`, and `all` for everything. `dev` includes every optional feature, so `uv sync --extra dev` is the one setup command for a clone.
 
 ### Changed
 - **Package layout**: organized by processing stage into `analysis/`, `tracking/`, `synthesis/` and `compat/`.

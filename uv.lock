@@ -940,6 +940,20 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "numexpr", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numexpr", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "plotly" },
+    { name = "polars", version = "2.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "polars", version = "2.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "sounddevice" },
+    { name = "streamlit", version = "1.65.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "streamlit", version = "1.67.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
 dataframes = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -958,6 +972,7 @@ dev = [
     { name = "polars", version = "2.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "sounddevice" },
     { name = "streamlit", version = "1.65.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "streamlit", version = "1.67.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
@@ -982,6 +997,7 @@ ui = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fast-partial-tracking", extras = ["fast", "plot", "dataframes", "ui", "live"], marker = "extra == 'all'" },
     { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.7" },
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.7" },
     { name = "matplotlib", marker = "extra == 'ui'", specifier = ">=3.7" },
@@ -998,12 +1014,13 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "scipy", specifier = ">=1.10" },
+    { name = "sounddevice", marker = "extra == 'dev'", specifier = ">=0.4.6" },
     { name = "sounddevice", marker = "extra == 'live'", specifier = ">=0.4.6" },
     { name = "soundfile", specifier = ">=0.12" },
     { name = "streamlit", marker = "extra == 'dev'", specifier = ">=1.35" },
     { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.35" },
 ]
-provides-extras = ["fast", "plot", "dataframes", "ui", "live", "dev"]
+provides-extras = ["fast", "plot", "dataframes", "ui", "live", "all", "dev"]
 
 [[package]]
 name = "fonttools"

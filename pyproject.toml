@@ -30,6 +30,7 @@ plot = ["matplotlib>=3.7"]
 dataframes = ["polars>=0.20", "pandas>=2.0"]
 ui = ["streamlit>=1.35", "plotly>=5.20", "matplotlib>=3.7"]
 live = ["sounddevice>=0.4.6"]
+all = ["fast-partial-tracking[fast,plot,dataframes,ui,live]"]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -39,6 +40,7 @@ dev = [
     "pandas>=2.0",
     "streamlit>=1.35",
     "plotly>=5.20",
+    "sounddevice>=0.4.6",
 ]
 
 [project.scripts]

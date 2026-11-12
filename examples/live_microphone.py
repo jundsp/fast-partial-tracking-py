@@ -33,7 +33,13 @@ BLOCK = 1024
 
 def microphone_blocks(fs: int, seconds: float):
     """Yields mono blocks from the default input device for ``seconds``."""
-    import sounddevice as sd
+    try:
+        import sounddevice as sd
+    except ImportError as exc:
+        raise SystemExit(
+            "The microphone needs sounddevice: run `uv sync --extra dev` in the repo "
+            "(or `pip install 'fast-partial-tracking[live]'`). Use --simulate to run without a microphone."
+        ) from exc
 
     blocks: queue.Queue[np.ndarray] = queue.Queue()
     with sd.InputStream(samplerate=fs, channels=1, blocksize=BLOCK, callback=lambda data, *_: blocks.put(data[:, 0].copy())):

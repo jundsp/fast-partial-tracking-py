@@ -154,6 +154,11 @@ def file_bytes(partials: fpt.Partials, suffix: str) -> bytes:
 
 SELECT_MODES = {"Replace": "replace", "Add": "add", "Remove": "remove"}
 DRAG_MODES = {"Zoom": "zoom", "Box": "select", "Lasso": "lasso", "Pan": "pan"}
+# The drag tools are chosen with DRAG_MODES in the app instead of the plot's toolbar: a toolbar
+# choice lives only in the browser and is lost whenever Streamlit redraws the plot.
+PLOT_CONFIG = {"displaylogo": False,
+               "modeBarButtonsToRemove": ["zoom2d", "pan2d", "select2d", "lasso2d", "zoomIn2d", "zoomOut2d",
+                                          "autoScale2d"]}
 
 
 def selection_state(signature: str, num_tracks: int) -> np.ndarray:
@@ -190,16 +195,16 @@ def selection_tools(partials: fpt.Partials, summary: fpt.selection.TrackSummary,
     drag_column, mode_column, status = st.columns([3, 3, 2])
     st.session_state.dragmode = DRAG_MODES[drag_column.radio(
         "Drag on the plot to", list(DRAG_MODES), horizontal=True, key="drag_choice",
-        help="Zoom: drag a box to zoom in, double-click to zoom out. Box and Lasso select every partial they "
-             "touch. Clicking a partial selects it in any mode.")]
+        help="The tool stays chosen until you pick another. Zoom: drag a box to zoom in, double-click to zoom "
+             "out. Box and Lasso select every partial they touch. Clicking a partial selects it with any tool.")]
     mode = SELECT_MODES[mode_column.radio(
         "Selecting", list(SELECT_MODES), horizontal=True,
-        help="Replace starts a new selection; Add and Remove change the current one. Clear selection shows "
-             "all partials normally again.")]
+        help="Replace starts a new selection; Add and Remove change the current one. Clear deselects "
+             "everything.")]
     count = len(st.session_state.selection)
     status.markdown(f"**{count} of {partials.num_tracks} partials selected**" if count else "**No partials selected**")
     duration = (partials.grid.signal_length or 0) / fs
-    rules, harmonic, everything, invert, clear = st.columns([3, 3, 2, 2, 2])
+    rules, harmonic, invert, clear = st.columns([3, 3, 2, 2])
     with rules.popover("Select by rule", width="stretch"), st.form("rule_select", border=False):
         time_range = st.slider("Overlaps time (s)", 0.0, max(duration, 0.01), (0.0, max(duration, 0.01)), 0.01)
         band = st.slider("Mean frequency (Hz)", 0, fs // 2, (0, fs // 2), 10)
@@ -217,11 +222,10 @@ def selection_tools(partials: fpt.Partials, summary: fpt.selection.TrackSummary,
         if st.form_submit_button("Select"):
             apply_selection(fpt.selection.harmonics(partials, f0, cents, top, time_s=time_range, summary=summary),
                             mode)
-    if everything.button("Select all", width="stretch"):
-        apply_selection(summary.id[summary.frames > 0], "replace")
-    if invert.button("Invert", width="stretch"):
+    if invert.button("Invert selection", width="stretch"):
         apply_selection(np.setdiff1d(summary.id[summary.frames > 0], st.session_state.selection), "replace")
-    if clear.button("Clear selection", width="stretch", disabled=not count):
+    if clear.button("Clear", width="stretch", type="primary" if count else "secondary",
+                    help="Deselect everything, so all partials are drawn normally again."):
         apply_selection(np.zeros(0, dtype=np.int64), "replace")
     return mode
 
@@ -273,7 +277,7 @@ def overview_tab(partials: fpt.Partials, x: np.ndarray | None, y: np.ndarray, fs
     else:
         figure = figures.overview_figure(partials, x, y, selected=selected, **display)
     figure.update_layout(dragmode=st.session_state.get("dragmode", "zoom"))
-    event = st.plotly_chart(figure, width="stretch", on_select="rerun",
+    event = st.plotly_chart(figure, width="stretch", on_select="rerun", config=PLOT_CONFIG,
                             selection_mode=("points", "box", "lasso"), key="partials_plot")
     plot_selection(figure, event, mode)
     if not len(selected):

@@ -166,12 +166,10 @@ def test_view_and_selection_controls() -> None:
     band = next(s for s in at.slider if s.label == "Frequency range (Hz)")
     assert band.value[0] == 0 and highest <= band.value[1] < highest + 500
     assert next(r for r in at.radio if r.label == "Drag on the plot to").options == ["Zoom", "Box", "Lasso", "Pan"]
-    clear = next(b for b in at.button if b.label == "Clear selection")
-    assert clear.disabled
-    next(b for b in at.button if b.label == "Select all").click().run()
+    next(b for b in at.button if b.label == "Invert selection").click().run()  # nothing selected: inverts to all
     total = int(at.metric[1].value)
     assert any(m.value == f"**{total} of {total} partials selected**" for m in at.markdown)
-    next(b for b in at.button if b.label == "Clear selection").click().run()
+    next(b for b in at.button if b.label == "Clear").click().run()
     assert any(m.value == "**No partials selected**" for m in at.markdown)
     next(s for s in at.slider if s.label == "Time range (s)").set_value((0.1, 0.3)).run()
     assert not at.exception, at.exception

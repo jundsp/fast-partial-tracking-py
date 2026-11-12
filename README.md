@@ -208,6 +208,7 @@ where MATLAB's is one sample off. Quality is unchanged (+0.02 dB mean R-SNR).
 Both repositories carry the same fixes:
 - **Paper equations:** the cost variances and frame midpoint now follow eqs. 10–13.
 - **Amplitude check:** estimates whose amplitude at the frame centre is impossibly large are rejected. The original check compared a log value with a linear bound and almost never triggered. Q = 3 models gain up to +10 dB; Q = 2 is unchanged or better. `amplitude_guard="legacy"` reproduces the old check.
+- **Positive frequencies:** estimates whose frequency at the frame centre is at or below 0 Hz (which can happen near DC) are discarded.
 
 ## Where the paper lives in the code
 

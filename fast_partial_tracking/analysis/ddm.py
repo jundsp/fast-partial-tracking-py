@@ -130,6 +130,9 @@ class DdmEstimator:
         valid = solved & self._is_stable(alpha)
         alpha[valid, 0] = self._estimate_alpha0(alpha[valid], spectra.weighted[peaks.bin[valid], 0], peaks.bin[valid])
         valid &= self._within_amplitude_bound(alpha, frame)
+        # A sinusoid's frequency at the frame centre (Im alpha_1, eq. 5) must be positive; estimates
+        # near DC can come out at or below 0 Hz and are discarded.
+        valid &= alpha[:, 1].imag > 0
         if self.max_peaks is not None and np.count_nonzero(valid) > self.max_peaks:
             candidates = np.flatnonzero(valid)
             loudest = candidates[np.argsort(-alpha[candidates, 0].real, kind="stable")[: self.max_peaks]]

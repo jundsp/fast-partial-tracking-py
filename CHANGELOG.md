@@ -8,6 +8,10 @@
   `"orchestra"` (12 s of Mozart), next to the `"kara"` demo voice. All three are CC0; their
   sources are listed in `fast_partial_tracking/data/README.md`. The web app offers them as sources.
 
+### Changed
+- **Web app**: the Listen players are now on the Partials tab, below the plot, so you can select
+  partials and play them without switching tabs. The separate Listen tab is gone.
+
 ## 0.2.0
 
 A redesign for Python: explicit settings, a partials toolkit, transforms, plotting, a web

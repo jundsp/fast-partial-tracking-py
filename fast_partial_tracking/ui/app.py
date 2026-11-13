@@ -287,16 +287,15 @@ def overview_tab(partials: fpt.Partials, x: np.ndarray | None, y: np.ndarray, fs
     event = st.plotly_chart(figure, width="stretch", on_select="rerun", config=PLOT_CONFIG,
                             selection_mode=("points", "box", "lasso"), key="partials_plot")
     plot_selection(figure, event, mode)
-    if not len(selected):
-        return
-    selection_panel(partials, summary, selected, fs)
+    listen_section(partials, x, y, fs)
+    if len(selected):
+        selection_panel(partials, summary, selected, fs)
 
 
 def selection_panel(partials: fpt.Partials, summary: fpt.selection.TrackSummary, selected: np.ndarray,
                     fs: int) -> None:
-    """Table, playback and a detail view of the selected partials."""
+    """Table and a detail view of the selected partials."""
     st.subheader(f"Selection: {len(selected)} of {partials.num_tracks} partials")
-    st.audio(wav_bytes(fpt.synthesize(partials.select(track_ids=selected)), fs), format="audio/wav")
     table = {
         "partial": selected,
         "start (s)": summary.start_s[selected].round(3),
@@ -316,13 +315,14 @@ def selection_panel(partials: fpt.Partials, summary: fpt.selection.TrackSummary,
     right.plotly_chart(figures.track_figure(partials.track(inspect)), width="stretch")
 
 
-def listen_tab(partials: fpt.Partials, x: np.ndarray | None, y: np.ndarray, fs: int) -> None:
+def listen_section(partials: fpt.Partials, x: np.ndarray | None, y: np.ndarray, fs: int) -> None:
+    """Players for the original, resynthesis and residual, and for all or the selected partials."""
+    st.subheader("Listen")
     signals = [("Resynthesis", y)] if x is None else [("Original", x), ("Resynthesis", y), ("Residual (noise)", x - y)]
     columns = st.columns(3)
     for column, (label, signal) in zip(columns, signals):
         column.caption(label)
         column.audio(wav_bytes(signal, fs), format="audio/wav")
-    st.subheader("Play partials")
     selected = st.session_state.get("selection", np.zeros(0, dtype=np.int64))
     sources = ["Selected partials", "All partials"] if len(selected) else ["All partials"]
     source = st.radio("Play", sources, horizontal=True)
@@ -426,16 +426,14 @@ def main() -> None:
         metrics[2].metric("Duration", f"{y.size / fs:.2f} s")
         metrics[3].metric("Hop", f"{partials.grid.hop} samples")
 
-    tabs = st.tabs(["Partials", "Listen", "Transform", "Details", "Export"])
+    tabs = st.tabs(["Partials", "Transform", "Details", "Export"])
     with tabs[0]:
         overview_tab(partials, x, y, fs, signature)
     with tabs[1]:
-        listen_tab(partials, x, y, fs)
-    with tabs[2]:
         transform_tab(partials, fs)
-    with tabs[3]:
+    with tabs[2]:
         details_tab(partials)
-    with tabs[4]:
+    with tabs[3]:
         export_tab(partials, y, fs, name, analysis, tracking)
 
 main()

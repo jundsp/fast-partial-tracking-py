@@ -29,7 +29,8 @@ def test_app_renders_results(app: AppTest) -> None:
     labels = [m.label for m in app.metric]
     assert labels == ["R-SNR", "Partials", "Frames", "Analysis time"]
     assert float(app.metric[0].value.split()[0]) > 15.0
-    assert len(app.tabs) == 5
+    assert len(app.tabs) == 4
+    assert any(h.value == "Listen" for h in app.subheader)
 
 
 def test_changing_settings_reruns(app: AppTest) -> None:
@@ -70,7 +71,7 @@ def test_harmonic_selection_highlights_partials() -> None:
     assert int(heading.split()[1]) >= 8
     assert any(sb.label == "Inspect partial" for sb in at.selectbox)
 
-    # Listen: selected partials over a time range at half speed, looped.
+    # Listen (on the Partials tab): selected partials over a time range at half speed, looped.
     play = next(r for r in at.radio if r.label == "Play")
     assert play.options == ["Selected partials", "All partials"]
     at.slider(key="play_range").set_value((0.2, 0.6)).run()

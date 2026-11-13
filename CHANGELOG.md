@@ -4,7 +4,7 @@
 
 ### Added
 - **Example recordings**: `fpt.data.example(name)` and `example_path(name)` load bundled
-  recordings: `"speech"` (7.5 s of a woman speaking English), `"hulusi"` (a flute melody, 15 s) and
+  recordings: `"speech"` (5.7 s of a woman speaking English), `"hulusi"` (a flute melody, 15 s) and
   `"orchestra"` (12 s of Mozart), next to the `"kara"` demo voice. All three are CC0; their
   sources are listed in `fast_partial_tracking/data/README.md`. The web app offers them as sources.
 

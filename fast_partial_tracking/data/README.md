@@ -20,11 +20,11 @@ Demo recording from the original MATLAB implementation,
 
 ## speech
 
-- Source: "Sophie in 't Veld - voice - en.flac", Sophie in 't Veld introducing herself,
-  recorded by Vera de Kok (1Veertje) for the Wikipedia Voice Intro Project, 2015.
-  <https://commons.wikimedia.org/wiki/File:Sophie_in_%27t_Veld_-_voice_-_en.flac>
+- Source: "Dawn Ades - voice - en - 170211 162427.ogg", art historian Dawn Ades introducing
+  herself, recorded by 1Veertje for the Wikipedia Voice Intro Project, 2017.
+  <https://commons.wikimedia.org/wiki/File:Dawn_Ades_-_voice_-_en_-_170211_162427.ogg>
 - License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
-- Changes: first 7.5 s (ending in a pause), already 44.1 kHz mono.
+- Changes: whole recording (5.7 s), decoded from lossless Ogg FLAC; already 44.1 kHz mono.
 
 ## hulusi
 

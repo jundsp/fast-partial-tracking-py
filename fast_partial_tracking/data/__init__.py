@@ -22,7 +22,7 @@ SYNTHETIC = ("harmonic", "chirp", "vibrato", "crossing", "chord")
 #: Bundled recordings: name -> (file, short description). All are mono, 44.1 kHz.
 EXAMPLES: dict[str, tuple[str, str]] = {
     "kara": ("demo_sound.wav", "male voice saying /kara/ (0.5 s)"),
-    "speech": ("speech.wav", "male voice, spoken English (15 s)"),
+    "speech": ("speech.wav", "female voice, spoken English (7.5 s)"),
     "hulusi": ("hulusi.wav", "hulusi (gourd flute) playing a melody (15 s)"),
     "orchestra": ("orchestra.wav", "orchestra, opening of Mozart's Figaro overture (12 s)"),
 }

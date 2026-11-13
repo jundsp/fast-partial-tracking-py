@@ -8,7 +8,7 @@ fades, peak-normalized to 0.7 and stored as 16-bit WAV.
 | Name | File | Content | License |
 |---|---|---|---|
 | `kara` | `demo_sound.wav` | Male voice saying /kara/ | See below |
-| `speech` | `speech.wav` | Male voice, spoken English | CC0 1.0 |
+| `speech` | `speech.wav` | Female voice, spoken English | CC0 1.0 |
 | `hulusi` | `hulusi.wav` | Hulusi (gourd flute) playing a melody | CC0 1.0 |
 | `orchestra` | `orchestra.wav` | Opening of Mozart's overture to *Le nozze di Figaro* | CC0 1.0 |
 
@@ -20,11 +20,11 @@ Demo recording from the original MATLAB implementation,
 
 ## speech
 
-- Source: "Adrian Goldsworthy - voice - en.flac", Adrian Goldsworthy introducing himself,
-  recorded by 1Veertje for the Wikipedia Voice Intro Project, 2016.
-  <https://commons.wikimedia.org/wiki/File:Adrian_Goldsworthy_-_voice_-_en.flac>
+- Source: "Sophie in 't Veld - voice - en.flac", Sophie in 't Veld introducing herself,
+  recorded by Vera de Kok (1Veertje) for the Wikipedia Voice Intro Project, 2015.
+  <https://commons.wikimedia.org/wiki/File:Sophie_in_%27t_Veld_-_voice_-_en.flac>
 - License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
-- Changes: first 15.2 s, resampled from 48 kHz.
+- Changes: first 7.5 s (ending in a pause), already 44.1 kHz mono.
 
 ## hulusi
 

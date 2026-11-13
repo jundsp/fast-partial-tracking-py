@@ -23,6 +23,11 @@ from fast_partial_tracking.compat.matlab import nextpow2
 from fast_partial_tracking.ui import figures
 
 DEMO = "Demo voice (/kara/)"
+RECORDINGS = {
+    "Recording: speech": "speech",
+    "Recording: hulusi melody": "hulusi",
+    "Recording: orchestra": "orchestra",
+}
 UPLOAD = "Upload a file..."
 OPEN_PARTIALS = "Open a partials file..."
 PARTIALS_TYPES = ["parquet", "arrows", "arrow", "sdif", "bin"]
@@ -36,9 +41,9 @@ def cli_audio() -> Path | None:
 
 
 def load_source() -> tuple[np.ndarray, int, str] | str | None:
-    """Sidebar: choose the input (demo, synthetic, upload, a CLI path, or ``OPEN_PARTIALS``)."""
+    """Sidebar: choose the input (demo, bundled recordings, synthetic, upload, a CLI path, or ``OPEN_PARTIALS``)."""
     st.sidebar.header("Audio")
-    options = [DEMO] + [f"Synthetic: {name}" for name in fpt.data.SYNTHETIC] + [UPLOAD, OPEN_PARTIALS]
+    options = [DEMO, *RECORDINGS] + [f"Synthetic: {name}" for name in fpt.data.SYNTHETIC] + [UPLOAD, OPEN_PARTIALS]
     path = cli_audio()
     if path is not None:
         options.insert(0, path.name)
@@ -49,6 +54,8 @@ def load_source() -> tuple[np.ndarray, int, str] | str | None:
         audio, fs = sf.read(path, always_2d=True)
     elif choice == DEMO:
         audio, fs = sf.read(fpt.data.demo_sound_path(), always_2d=True)
+    elif choice in RECORDINGS:
+        audio, fs = sf.read(fpt.data.example_path(RECORDINGS[choice]), always_2d=True)
     elif choice.startswith("Synthetic: "):
         x, fs = fpt.data.synthetic(choice.removeprefix("Synthetic: "), duration=2.0)
         audio = x[:, None]

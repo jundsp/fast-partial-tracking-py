@@ -53,7 +53,7 @@ where = ["."]
 include = ["fast_partial_tracking*"]
 
 [tool.setuptools.package-data]
-fast_partial_tracking = ["py.typed", "data/*.wav"]
+fast_partial_tracking = ["py.typed", "data/*.wav", "data/README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

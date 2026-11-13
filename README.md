@@ -66,6 +66,9 @@ fpt.plot.figure(partials, x, out_path="voice.png")  # the figure above
 partials.save("voice.parquet")         # or .arrows / .sdif / .bin
 ```
 
+Longer recordings are bundled too: `fpt.data.example("speech")`, `"hulusi"` (a flute
+melody) and `"orchestra"`; see `fpt.data.EXAMPLES`.
+
 ## Web app
 
 ```sh
@@ -284,4 +287,6 @@ skips running the example scripts; the third re-exports the MATLAB references fi
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+The code is MIT; see [LICENSE](LICENSE). The bundled example recordings keep their own
+licenses (CC0 apart from the original demo voice), listed with their sources in
+[fast_partial_tracking/data/README.md](fast_partial_tracking/data/README.md).

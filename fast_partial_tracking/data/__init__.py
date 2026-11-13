@@ -1,8 +1,11 @@
-"""Example audio: the bundled demo recording and synthetic test signals.
+"""Example audio: bundled recordings and synthetic test signals.
+
+The recordings and their licenses are listed in ``data/README.md``.
 
 Example:
     >>> from fast_partial_tracking import data
     >>> x, fs = data.demo_sound()
+    >>> x, fs = data.example("hulusi")
     >>> x, fs = data.synthetic("vibrato")
 """
 
@@ -16,10 +19,35 @@ import soundfile as sf
 
 SYNTHETIC = ("harmonic", "chirp", "vibrato", "crossing", "chord")
 
+#: Bundled recordings: name -> (file, short description). All are mono, 44.1 kHz.
+EXAMPLES: dict[str, tuple[str, str]] = {
+    "kara": ("demo_sound.wav", "male voice saying /kara/ (0.5 s)"),
+    "speech": ("speech.wav", "male voice, spoken English (15 s)"),
+    "hulusi": ("hulusi.wav", "hulusi (gourd flute) playing a melody (15 s)"),
+    "orchestra": ("orchestra.wav", "orchestra, opening of Mozart's Figaro overture (12 s)"),
+}
+
+
+def example_path(name: str) -> Path:
+    """Path of a bundled recording; ``name`` is one of ``EXAMPLES``."""
+    if name not in EXAMPLES:
+        raise ValueError(f"unknown example {name!r}; choose from {tuple(EXAMPLES)}")
+    return Path(str(files(__package__).joinpath(EXAMPLES[name][0])))
+
+
+def example(name: str) -> tuple[np.ndarray, int]:
+    """A bundled recording; ``name`` is one of ``EXAMPLES``.
+
+    Returns:
+        (mono samples, sampling rate).
+    """
+    x, fs = sf.read(example_path(name))
+    return x, int(fs)
+
 
 def demo_sound_path() -> Path:
     """Path of the bundled demo recording (a male voice saying /kara/, 44.1 kHz)."""
-    return Path(str(files(__package__).joinpath("demo_sound.wav")))
+    return example_path("kara")
 
 
 def demo_sound() -> tuple[np.ndarray, int]:
